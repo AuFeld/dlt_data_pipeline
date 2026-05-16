@@ -1,0 +1,73 @@
+[project]
+name = "data_pipeline_template"
+version = "0.1.0"
+description = "Reusable dlt + Airflow Fivetran replacement"
+requires-python = ">=3.12,<3.13"
+# Airflow refuses unpinned dependency resolution. Install with the matching
+# constraints file, e.g.:
+#   uv pip install "apache-airflow==2.10.*" \
+#     --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.3/constraints-3.12.txt"
+# uv sync will not honor Airflow's constraints automatically — see README.
+dependencies = [
+  "dlt[duckdb,postgres,filesystem]>=1.0",
+  "apache-airflow>=2.10,<3",
+  "apache-airflow-providers-cncf-kubernetes>=8",
+  "apache-airflow-providers-postgres>=5",
+  "pydantic>=2.7",
+  "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Heavy / platform-sensitive destinations gated as extras — install only when
+# wiring Segment 8. snowflake-connector-python has no macOS arm64 wheel and
+# requires Xcode CLT to build from sdist.
+snowflake = ["dlt[snowflake]>=1.0"]
+databricks = ["dlt[databricks]>=1.0"]
+dev = [
+  "pytest>=8",
+  "ruff>=0.6",
+  "mypy>=1.11",
+  "pre-commit>=3.7",
+]
+
+[project.entry-points."data_pipeline_template.sources"]
+rest_api = "data_pipeline_template.sources.rest_api:builder"
+sql_database = "data_pipeline_template.sources.sql_database:builder"
+filesystem = "data_pipeline_template.sources.filesystem:builder"
+pg_cdc = "data_pipeline_template.sources.pg_cdc:builder"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/data_pipeline_template"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "TID", "UP", "B"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+# Enforce Design principle #2: only the airflow subpackage + dags/ entry-point
+# may import airflow. Keeps pipeline_factory + sources/ + destinations/ +
+# config/ orchestrator-agnostic.
+banned-module-level-imports = ["airflow"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/data_pipeline_template/airflow/**" = ["TID253"]
+"dags/**" = ["TID253"]
+"tests/**" = ["TID253"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+packages = ["data_pipeline_template"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
