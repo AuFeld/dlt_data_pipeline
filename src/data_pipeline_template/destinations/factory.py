@@ -8,6 +8,7 @@ credentials.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, cast
 
@@ -16,12 +17,23 @@ from dlt.destinations import duckdb, postgres
 
 from data_pipeline_template.config.models import DestinationConfig, DestinationType
 
-_DUCKDB_DIR = Path(".dlt")
+# Anchor duckdb files on the repo root by default (stable across CLI runs,
+# Airflow tasks, and restarts). Under Airflow, ``PipelineTasksGroup`` switches
+# CWD/DLT_DATA_DIR to a per-task temp dir, so a relative path would resolve
+# under that temp dir (which gets wiped). Tests override via the env var.
+_DUCKDB_DIR_ENV = "DATA_PIPELINE_DUCKDB_DIR"
+_DEFAULT_DUCKDB_DIR = Path(__file__).resolve().parents[3] / ".dlt"
+
+
+def _duckdb_dir() -> Path:
+    override = os.environ.get(_DUCKDB_DIR_ENV)
+    return Path(override) if override else _DEFAULT_DUCKDB_DIR
 
 
 def _resolve_duckdb_path(connection: str) -> str:
-    _DUCKDB_DIR.mkdir(parents=True, exist_ok=True)
-    return str(_DUCKDB_DIR / f"{connection}.duckdb")
+    target = _duckdb_dir()
+    target.mkdir(parents=True, exist_ok=True)
+    return str(target / f"{connection}.duckdb")
 
 
 def build_destination(cfg: DestinationConfig) -> Destination[Any, Any]:

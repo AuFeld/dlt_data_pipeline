@@ -12,7 +12,7 @@ from data_pipeline_template.destinations.factory import build_destination
 
 
 def test_duckdb_returns_dlt_destination(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_PIPELINE_DUCKDB_DIR", str(tmp_path / ".dlt"))
     cfg = DestinationConfig(type=DestinationType.duckdb, connection="local_duckdb", dataset="raw")
     dest = build_destination(cfg)
     assert dest is not None

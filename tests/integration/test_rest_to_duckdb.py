@@ -40,6 +40,7 @@ def _duckdb_rowcount(db_path: Path, dataset: str, table: str) -> int:
 def test_rest_to_duckdb_mocked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     pipelines_dir = _stage(tmp_path)
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_PIPELINE_DUCKDB_DIR", str(tmp_path / ".dlt"))
     payload = json.loads(CASSETTE.read_text())
 
     with responses.RequestsMock() as rsps:
@@ -67,6 +68,7 @@ def test_rest_to_duckdb_mocked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 def test_rest_to_duckdb_live(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     pipelines_dir = _stage(tmp_path)
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_PIPELINE_DUCKDB_DIR", str(tmp_path / ".dlt"))
 
     load_info = pipeline_factory.run(PIPELINE_NAME, pipelines_root=pipelines_dir)
     assert load_info is not None
