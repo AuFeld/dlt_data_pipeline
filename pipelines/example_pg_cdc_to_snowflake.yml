@@ -1,0 +1,22 @@
+name: example_pg_cdc_to_snowflake
+source:
+  type: pg_cdc
+  connection: pg_source
+  config:
+    slot_name: dlt_orders_slot
+    publication_name: dlt_orders_pub
+    tables:
+      - public.orders
+sync:
+  mode: cdc
+  primary_key: id
+destination:
+  type: snowflake
+  connection: snowflake_warehouse
+  dataset: raw_orders_cdc
+schedule:
+  cron: "*/5 * * * *"
+  enabled: true
+options:
+  write_disposition: merge
+  schema_contract: freeze

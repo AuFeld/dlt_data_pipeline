@@ -28,6 +28,7 @@ dev = [
   "ruff>=0.6",
   "mypy>=1.11",
   "pre-commit>=3.7",
+  "types-PyYAML>=6",
 ]
 
 [project.entry-points."data_pipeline_template.sources"]

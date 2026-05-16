@@ -1,0 +1,13 @@
+name: missing_cursor
+source:
+  type: sql_database
+  connection: pg_source
+  config: {}
+sync:
+  mode: incremental
+destination:
+  type: postgres
+  connection: pg_warehouse
+  dataset: raw_x
+schedule:
+  cron: "0 * * * *"

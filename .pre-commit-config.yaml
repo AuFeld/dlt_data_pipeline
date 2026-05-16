@@ -3,8 +3,16 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
       - id: end-of-file-fixer
       - id: check-yaml
+        # Fixture YAMLs are intentionally malformed to exercise the loader's
+        # error paths — skip them here.
+        exclude: |
+          (?x)^(
+            tests/fixtures/pipelines_invalid/.*\.yml|
+            tests/fixtures/pipelines_valid/_.*\.yml
+          )$
       - id: check-toml
       - id: check-merge-conflict
       - id: check-added-large-files

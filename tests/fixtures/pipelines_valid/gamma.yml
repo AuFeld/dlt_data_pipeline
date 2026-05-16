@@ -1,0 +1,19 @@
+name: gamma
+source:
+  type: pg_cdc
+  connection: pg_source
+  config:
+    slot_name: gamma_slot
+    publication_name: gamma_pub
+sync:
+  mode: cdc
+  primary_key: id
+destination:
+  type: snowflake
+  connection: snowflake_warehouse
+  dataset: raw_gamma
+schedule:
+  cron: "*/5 * * * *"
+options:
+  write_disposition: merge
+  schema_contract: freeze
