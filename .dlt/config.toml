@@ -1,0 +1,8 @@
+# Committed, non-secret dlt config. Secrets live in .dlt/secrets.toml (gitignored)
+# or in env vars (containers / CI).
+
+[runtime]
+log_level = "INFO"
+
+[normalize]
+# Keep defaults — override per-pipeline if needed.

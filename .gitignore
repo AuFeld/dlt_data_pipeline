@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# dlt local secrets — never commit
+.dlt/secrets.toml
+
+# Dagster local state
+dagster_home/storage/
+dagster_home/history/
+dagster_home/logs/
