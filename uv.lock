@@ -759,7 +759,7 @@ dependencies = [
     { name = "apache-airflow" },
     { name = "apache-airflow-providers-cncf-kubernetes" },
     { name = "apache-airflow-providers-postgres" },
-    { name = "dlt", extra = ["duckdb", "filesystem", "postgres"] },
+    { name = "dlt", extra = ["duckdb", "filesystem", "postgres", "sql-database"] },
     { name = "pydantic" },
     { name = "pyyaml" },
 ]
@@ -786,7 +786,7 @@ requires-dist = [
     { name = "apache-airflow-providers-cncf-kubernetes", specifier = ">=8" },
     { name = "apache-airflow-providers-postgres", specifier = ">=5" },
     { name = "dlt", extras = ["databricks"], marker = "extra == 'databricks'", specifier = ">=1.0" },
-    { name = "dlt", extras = ["duckdb", "postgres", "filesystem"], specifier = ">=1.0" },
+    { name = "dlt", extras = ["duckdb", "postgres", "filesystem", "sql-database"], specifier = ">=1.0" },
     { name = "dlt", extras = ["snowflake"], marker = "extra == 'snowflake'", specifier = ">=1.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7" },
@@ -918,6 +918,9 @@ postgres = [
 ]
 snowflake = [
     { name = "snowflake-connector-python" },
+]
+sql-database = [
+    { name = "sqlalchemy" },
 ]
 
 [[package]]

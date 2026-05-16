@@ -231,3 +231,6 @@ airflow_home/logs/
 airflow_home/airflow.db
 airflow_home/webserver_config.py
 airflow_home/standalone_admin_password.txt
+
+# Claude Code local state (per-machine settings, scheduled-task lock, session files)
+.claude/
