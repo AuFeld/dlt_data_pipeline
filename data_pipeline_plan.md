@@ -1,8 +1,8 @@
-# Plan: `data_pipeline_template` — a dlt + Dagster Fivetran replacement
+# Plan: `data_pipeline_template` — a dlt + Airflow Fivetran replacement
 
 ## Context
 
-Goal: a reusable Python template/app that replaces Fivetran — sync data from many sources (REST 
+Goal: a reusable Python template/app that replaces Fivetran — sync data from many sources (REST
 APIs, SQL databases, files/S3) to many destinations (Snowflake, Postgres, Databricks),
 with full-refresh, incremental, and CDC sync modes.
 
@@ -15,29 +15,31 @@ governance, run isolation, and config-conflict avoidance.
 Decided tech (locked):
 - **Foundation: dlt** (dlt-hub) — extraction, schema inference, normalization,
   incremental loading, destination writes.
-- **Orchestration: Dagster** (asset-based) via `dagster-dlt` — scheduling,
-  retries, observability, sensors.
+- **Orchestration: Apache Airflow** (DAG-based) via the official
+  `dlt.helpers.airflow_helper.PipelineTasksGroup` — scheduling, retries,
+  observability, sensors. One Airflow task per dlt resource inside a
+  `TaskGroup`, one `DAG` per pipeline YAML.
 - **Sync modes v1:** full refresh, incremental (cursor/replication-key), CDC
   (Postgres logical replication via dlt `pg_replication`).
-- **Deployment: Docker** — Dockerfile + docker-compose for local dev (Dagster
-  webserver + daemon + source/dest Postgres).
+- **Deployment: Docker** — Dockerfile + docker-compose for local dev (Airflow
+  webserver + scheduler + triggerer + metadata Postgres + source/dest Postgres).
 
 Design principles:
 1. A normal user adds a new pipeline by writing **one YAML file** — zero Python
    edits. New source *types* are the only code extension point.
 2. **Orchestrator boundary is load-bearing.** `pipeline_factory.py` and
    everything under `sources/`, `destinations/`, `config/` must remain
-   **Dagster-agnostic** — no `import dagster` outside `src/data_pipeline_template/dagster/`.
+   **Airflow-agnostic** — no `import airflow` outside `src/data_pipeline_template/airflow/`.
    The factory takes a `PipelineConfig` and returns a runnable `dlt.pipeline`;
-   the Dagster layer wraps it. This keeps dlt core usable standalone (CLI runs,
-   tests, future orchestrator swap) and lets us swap Dagster without rewriting
+   the Airflow layer wraps it. This keeps dlt core usable standalone (CLI runs,
+   tests, future orchestrator swap) and lets us swap Airflow without rewriting
    the pipeline core. Enforce via:
-   - Layout: Dagster code isolated to `src/data_pipeline_template/dagster/`.
-   - Lint rule: a `ruff` `tidy-imports`/`flake8-tidy-imports` ban on `dagster*`
+   - Layout: Airflow code isolated to `src/data_pipeline_template/airflow/`.
+   - Lint rule: a `ruff` `tidy-imports`/`flake8-tidy-imports` ban on `airflow*`
      imports anywhere outside that subpackage (or a small custom test that
      greps the source tree and fails CI on violations).
    - Test: a unit test runs a pipeline end-to-end via `pipeline_factory.run(name)`
-     **without** importing the Dagster package at all, proving the boundary.
+     **without** importing the Airflow package at all, proving the boundary.
 3. **Source types are plugins (Python entry points), not hardcoded.**
    `sources/registry.py` does **not** maintain a hardcoded `{name -> builder}`
    dict. Instead it discovers source types via the
@@ -56,20 +58,23 @@ Design principles:
    editing a shared registry file (no merge-conflict bottleneck), supports
    eventual out-of-tree source packages, and gives each source a clean
    testable boundary (`Protocol`-typed `builder`).
-4. **Compute is per-run isolated via a run launcher.**
-   The prod Dagster deployment uses a run launcher that spawns a **fresh
-   container per Dagster run** (`K8sRunLauncher` or `EcsRunLauncher`, target
-   chosen during Segment 10). Local `docker compose` keeps the default
-   in-process launcher for dev ergonomics, but the codebase is written to the
-   run-launcher contract from day one. Implications baked into the design:
-   - Secrets reach each run via env (k8s `Secret` / ECS task-def secrets) —
-     never assumed-present on a shared host.
-   - Logs ship out (stdout → cluster log aggregator); nothing on local disk
-     is durable.
+4. **Compute is per-run isolated via `KubernetesExecutor`.**
+   The prod Airflow deployment uses `KubernetesExecutor` so every Airflow task
+   runs in a **fresh pod** built from `docker/Dockerfile`. Local
+   `docker compose` uses `LocalExecutor` for dev ergonomics, but the codebase
+   is written to the `pod_override` contract from day one. Implications baked
+   into the design:
+   - Secrets reach each pod via env (k8s `Secret` env-mounted on the pod
+     template) — never assumed-present on a shared host.
+   - Logs ship out (stdout → cluster log aggregator; Airflow remote logging
+     to S3/GCS for worker-pod logs); nothing on local disk is durable beyond
+     a run.
    - A built image is the deploy unit — `docker/Dockerfile` is the run image,
-     CI builds + pushes it.
-   - Per-pipeline CPU/RAM limits are configurable on the asset (Dagster `tags`
-     → launcher resource requests) so one huge sync can't starve smaller ones.
+     CI builds + pushes it, and the pod template references the new tag.
+   - Per-pipeline CPU/RAM limits are configurable on the YAML
+     (`resources:` block) and flow into per-task
+     `executor_config={"pod_override": V1Pod(...)}` so one huge sync can't
+     starve smaller ones.
 
 ## Repo Structure
 
@@ -78,9 +83,17 @@ data_pipeline_template/
 ├── pyproject.toml                  # deps, ruff/mypy/pytest config (use uv)
 ├── .env.example                    # documents required env vars (non-secret)
 ├── docker/
-│   ├── Dockerfile                  # single image: code + dlt + dagster
-│   └── docker-compose.yml          # webserver, daemon, postgres-source, postgres-dest
-├── dagster_home/dagster.yaml       # instance config: persistent storage, run launcher
+│   ├── Dockerfile                  # single image: code + dlt + airflow
+│   └── docker-compose.yml          # webserver, scheduler, triggerer,
+│                                   # airflow-init, postgres-airflow (metadata),
+│                                   # postgres-source, postgres-destination
+├── airflow_home/
+│   ├── airflow.cfg                 # instance config: executor, metadata DB
+│   └── pod_templates/              # base pod template(s) for KubernetesExecutor
+├── dags/
+│   └── data_pipeline_dags.py       # imports loader + dag_factory; assigns
+│                                   #   generated DAGs into module globals()
+│                                   #   so Airflow's DagBag scans them
 ├── pipelines/                      # USER-FACING: one YAML per pipeline
 │   ├── _schema.md
 │   └── example_*.yml
@@ -98,11 +111,10 @@ data_pipeline_template/
 │   │   └── pg_cdc/__init__.py      # wraps dlt pg_replication
 │   ├── destinations/factory.py     # destination "type" -> configured dlt destination
 │   ├── pipeline_factory.py         # core: PipelineConfig -> runnable dlt.pipeline
-│   ├── dagster/
-│   │   ├── definitions.py          # entrypoint — auto-discovers all pipelines
-│   │   ├── asset_factory.py        # YAML config -> @dlt_assets via dagster-dlt
-│   │   ├── schedules.py            # ScheduleDefinitions from YAML cron
-│   │   └── sensors.py              # freshness / failure / CDC sensors
+│   ├── airflow/
+│   │   ├── dag_factory.py          # YAML config -> DAG with PipelineTasksGroup
+│   │   ├── callbacks.py            # on_failure / on_success / SLA callbacks
+│   │   └── sensors.py              # freshness / CDC custom sensors
 │   └── observability/alerts.py     # run-failure hook -> Slack/email
 ├── tests/{unit,integration,fixtures}/
 ├── .dlt/
@@ -143,7 +155,9 @@ options:
 credentials. Logical name maps to a dlt section in `.dlt/secrets.toml` (local)
 or env vars (containers/CI), e.g.
 `DESTINATION__POSTGRES__CREDENTIALS=postgresql://...`. dlt reads env vars with
-zero code change.
+zero code change. Airflow `Connection`/`Variable` objects are used wherever
+operator templates would otherwise render credentials, so the UI mask filter
+catches them.
 
 ## "Add a pipeline in 10 minutes" workflow
 
@@ -152,23 +166,30 @@ zero code change.
 2. Fill in source/sync/destination/schedule in the YAML.
 3. Add credentials to `.dlt/secrets.toml` (local) or env vars (deployed) under
    the logical connection name.
-4. Restart `dagster dev` / container — `definitions.py` auto-discovers the YAML,
-   generates the `@dlt_assets`, schedule appears in the UI.
-5. Click "Materialize" to run once; verify rows landed.
+4. Restart `airflow standalone` / container — `dags/data_pipeline_dags.py`
+   auto-discovers the YAML, generates a `DAG` wrapping a `PipelineTasksGroup`,
+   and the new DAG appears in the Airflow UI.
+5. Click "Trigger DAG" to run once; verify rows landed.
 
 ## Milestones (sequential, independently shippable)
 
 ### Segment 1 — Project skeleton & tooling
 - `pyproject.toml` deps: `dlt[duckdb,postgres,snowflake,databricks,filesystem]`,
-  `dagster`, `dagster-webserver`, `dagster-dlt`, `pydantic`, `pyyaml`, `pytest`,
-  `ruff`, `mypy`. Package skeleton, `.dlt/config.toml`, `.env.example`.
+  `apache-airflow`, `apache-airflow-providers-cncf-kubernetes`,
+  `apache-airflow-providers-postgres`, `pydantic`, `pyyaml`, `pytest`,
+  `ruff`, `mypy`. Airflow refuses unpinned dependency resolution — document
+  and use the matching constraints file:
+  `pip install "apache-airflow==<v>" --constraint
+  "https://raw.githubusercontent.com/apache/airflow/constraints-<v>/constraints-<python>.txt"`.
+  Pin Python to a version Airflow supports (verify against Airflow release notes
+  at build time). Package skeleton, `.dlt/config.toml`, `.env.example`.
 - `pyproject.toml` also declares the `data_pipeline_template.sources`
   entry-point group with the four built-in source builders (per Design
   principle #3).
-- Ruff `flake8-tidy-imports` rule banning `dagster*` imports outside
-  `src/data_pipeline_template/dagster/` (per Design principle #2).
-- **Done when:** `uv sync` succeeds; `ruff check` + `pytest` run clean; imports;
-  `python -c "from importlib.metadata import entry_points;
+- Ruff `flake8-tidy-imports` rule banning `airflow*` imports outside
+  `src/data_pipeline_template/airflow/` (per Design principle #2).
+- **Done when:** `uv sync` succeeds (with constraints honored); `ruff check` +
+  `pytest` run clean; `python -c "from importlib.metadata import entry_points;
   print(entry_points(group='data_pipeline_template.sources'))"` lists the four
   builders.
 
@@ -185,26 +206,31 @@ zero code change.
   `sources/rest_api/` (builder + entry-point registration),
   `destinations/factory.py` (duckdb + postgres), `pipeline_factory.py`. CLI
   to run one pipeline by name. `pipeline_factory.py` does **not** import
-  `dagster` (Design principle #2).
+  `airflow` (Design principle #2).
 - **Done when:** `python -m data_pipeline_template.pipeline_factory run
   example_rest_to_duckdb` syncs a public API into local duckdb; integration
   test asserts row counts + schema; a separate test imports
-  `pipeline_factory` and runs a pipeline end-to-end **without** `dagster`
+  `pipeline_factory` and runs a pipeline end-to-end **without** `airflow`
   available (proves boundary); a unit test asserts the registry discovers
   `rest_api` purely via entry points (no hardcoded reference).
 
-### Segment 4 — Dagster integration
-- `asset_factory.py` (`@dlt_assets` via `dagster-dlt`), `definitions.py`
-  (auto-discovery), `schedules.py` (cron from YAML), `dagster_home/dagster.yaml`.
-- `dagster.yaml` uses the default in-process run launcher locally; structured
-  so the `run_launcher` block can be swapped for `K8sRunLauncher` /
-  `EcsRunLauncher` in Segment 10 without touching asset/definition code
-  (Design principle #4). YAML supports per-pipeline `resources` block
-  (cpu/memory) that maps to Dagster `tags` consumed by the run launcher in
-  prod.
-- **Done when:** `dagster dev` loads, examples appear as asset groups, manual
-  materialization succeeds in UI, schedule visible; `resources` tags appear
-  on assets even when the local launcher ignores them.
+### Segment 4 — Airflow integration
+- `airflow/dag_factory.py`: build one `DAG` per YAML — `schedule=<yaml.schedule.cron>`,
+  `catchup=False`, `max_active_runs=1`, wrap the dlt pipeline returned by
+  `pipeline_factory` in `dlt.helpers.airflow_helper.PipelineTasksGroup` so each
+  dlt resource becomes its own Airflow task.
+- `dags/data_pipeline_dags.py`: walks discovered YAMLs via the config loader,
+  calls `dag_factory.build(yaml)`, and assigns each generated `DAG` into
+  module-level `globals()` so Airflow's DagBag scans them.
+- `airflow_home/airflow.cfg`: `LocalExecutor` locally, structured so the
+  `[core] executor` line can be swapped to `KubernetesExecutor` in Segment 10
+  without touching DAG code (Design principle #4). YAML supports per-pipeline
+  `resources:` block (cpu/memory) → consumed by
+  `executor_config={"pod_override": V1Pod(...)}` on each task generated inside
+  the `TaskGroup`. Local executor ignores it; prod honors it.
+- **Done when:** `airflow standalone` loads, examples appear in the UI as
+  DAGs, manual trigger succeeds, schedule visible; `resources` materialize as
+  `executor_config` on tasks even when the local executor ignores them.
 
 ### Segment 5 — SQL database source + full refresh & incremental
 - `sources/sql_database.py` (Postgres + MySQL). Wire `sync.mode` →
@@ -213,21 +239,27 @@ zero code change.
   run picks up only changed rows; cursor persists between runs.
 
 ### Segment 6 — Docker / docker-compose
-- `Dockerfile` (single image — webserver, daemon, and runs all share it; this is
-  also the **prod run image** consumed by the launcher in Segment 10).
-- `docker-compose.yml` (dagster-webserver, dagster-daemon, postgres-source,
-  postgres-destination, persistent volumes). Default in-process launcher only.
+- `Dockerfile` (single image — webserver, scheduler, triggerer, and worker
+  pods all share it; this is also the **prod run image** consumed by
+  `KubernetesExecutor` in Segment 10).
+- `docker-compose.yml` services: `airflow-init` (runs `airflow db migrate` and
+  creates the admin user), `airflow-webserver`, `airflow-scheduler`,
+  `airflow-triggerer`, `postgres-airflow` (metadata DB), `postgres-source`,
+  `postgres-destination`. Persistent volumes for `dags/`, `airflow_home/logs/`,
+  and each Postgres data dir. `LocalExecutor` only.
 - `seed_local.sh`.
 - **Done when:** `docker compose up` brings up the full stack; UI reachable;
   Postgres→Postgres runs in-container; state survives `docker compose restart`;
   same image runs a pipeline standalone via `docker run … python -m
-  data_pipeline_template.pipeline_factory run <name>` (no Dagster process)
-  — proves the image works for run-launcher per-run invocation.
+  data_pipeline_template.pipeline_factory run <name>` (no Airflow process)
+  — proves the image works for per-task pod invocation under
+  `KubernetesExecutor`.
 
 ### Segment 7 — CDC source (Postgres logical replication)
 - `sources/pg_cdc.py` (wraps dlt `pg_replication`), `sync.mode: cdc` handling
-  (slot + publication, snapshot + streaming), CDC sensor/short-interval schedule.
-  Document `wal_level=logical` requirement.
+  (slot + publication, snapshot + streaming), short-interval schedule on the
+  generated DAG, optional custom sensor under `airflow/sensors.py` to monitor
+  replication-slot lag. Document `wal_level=logical` requirement.
 - **Done when:** source PG configured for logical replication; INSERT/UPDATE/
   DELETE propagate to destination; replication slot persists across restarts.
 
@@ -239,38 +271,45 @@ zero code change.
   duckdb stand-in.
 
 ### Segment 9 — Observability, alerting, template polish
-- `observability/alerts.py` (run-failure hooks → Slack/email), freshness
-  sensors, `scripts/new_pipeline.py`, CI workflow
-  (`.github/workflows/ci.yml`) running unit + integration tests.
+- `airflow/callbacks.py`: `on_failure_callback` posting to Slack/email
+  (re-uses `observability/alerts.py`). Freshness via Airflow
+  `Dataset`/`DatasetEvent` plus `SLA` misses (note Airflow 2.x SLA caveats;
+  in Airflow 3.x switch to deadlines). `scripts/new_pipeline.py`, CI workflow
+  (`.github/workflows/ci.yml`) installs Airflow via constraints file then runs
+  unit + integration tests.
 - **Done when:** simulated failure triggers alert; scaffolder produces valid
   YAML; CI green.
 
-### Segment 10 — Prod deployment + run launcher
-- Choose target (k8s vs. ECS) and wire it. New files:
-  `deploy/<target>/` with manifests / task defs; `dagster_home/dagster.yaml`
-  in prod swaps `run_launcher` to `K8sRunLauncher` or `EcsRunLauncher`.
+### Segment 10 — Prod deployment + executor
+- Switch `airflow.cfg` (or `AIRFLOW__CORE__EXECUTOR` env) to
+  `KubernetesExecutor`; ship a base `pod_template_file` under
+  `airflow_home/pod_templates/` that references the deploy image.
+- New files: `deploy/k8s/` with manifests for the webserver, scheduler,
+  triggerer, metadata Postgres, and Airflow Secret/ConfigMap.
 - CI builds + pushes the image from `docker/Dockerfile` to a registry; deploy
-  step rolls the webserver + daemon and points the run launcher at the new
-  tag.
+  step rolls the webserver + scheduler + triggerer and updates the pod
+  template's image tag.
 - Secrets: switch from `.env` / `.dlt/secrets.toml` to a real backend
-  (k8s `Secret` mounted as env, or AWS Secrets Manager via the ECS task
-  definition) — logical connection names in YAML resolve identically; only
-  the resolver layer changes.
-- Logs: stdout shipped to the cluster log aggregator (cloudwatch / loki / etc.);
+  (k8s `Secret` env-mounted onto worker pods, optionally via Airflow's
+  Secrets Backend integration) — logical connection names in YAML resolve
+  identically; only the resolver layer changes.
+- Logs: scheduler/webserver stdout shipped to the cluster log aggregator;
+  worker-pod logs persisted via Airflow remote logging (S3 / GCS / etc.);
   remove any code paths that assume local-disk persistence beyond a run.
-- Resource sizing: YAML `resources` block (added in Segment 4) flows through
-  Dagster tags into per-run CPU/RAM requests on the launcher.
-- **Done when:** a scheduled pipeline runs as a fresh pod/task per invocation
-  with isolated CPU/RAM limits; image rollout updates run image without
-  restarting the daemon mid-run; secrets resolve from the prod backend; logs
-  are visible in the cluster aggregator; killing the webserver does not abort
-  in-flight runs.
+- Resource sizing: YAML `resources:` block (added in Segment 4) flows through
+  `executor_config={"pod_override": V1Pod(...)}` into per-task CPU/RAM
+  requests on the pod.
+- **Done when:** a scheduled pipeline runs as a fresh pod per task with
+  isolated CPU/RAM limits; image rollout updates the run image without
+  aborting in-flight runs; secrets resolve from the prod backend; logs are
+  visible in the cluster aggregator; killing the webserver does not abort
+  in-flight runs (scheduler owns state).
 
 ### Segment 11 — Documentation
 - Rewrite root `README.md`: project purpose, architecture overview, quickstart,
   the 10-min "add a pipeline" workflow, links to component READMEs.
 - Per-component `README.md` in each major dir — `config/`, `sources/`,
-  `destinations/`, `dagster/`, `observability/`, `docker/`, `pipelines/`,
+  `destinations/`, `airflow/`, `observability/`, `docker/`, `pipelines/`,
   `tests/`. Each covers: what the component does, how to use / extend it
   (e.g. adding a new source type to `registry.py`), known issues, troubleshooting.
 - Fold relevant **Tricky Parts** + **Open Considerations** notes into the
@@ -291,21 +330,23 @@ zero code change.
   to compose `postgres-source` + `postgres-destination`. Local Postgres acts as
   **both source and destination** to exercise sql_database, incremental cursors,
   merge disposition, and CDC. Seed via `tests/fixtures/seed_source.sql`.
-- **E2E local flow:** `docker compose up` → `seed_local.sh` → materialize each
-  example in UI → for incremental, mutate source + re-run, assert only deltas →
-  for CDC, snapshot then INSERT/UPDATE/DELETE, confirm propagation → restart
-  containers, re-run, confirm state persisted.
+- **E2E local flow:** `docker compose up` → `seed_local.sh` → trigger each
+  example DAG in UI → for incremental, mutate source + re-run, assert only
+  deltas → for CDC, snapshot then INSERT/UPDATE/DELETE, confirm propagation →
+  restart containers, re-run, confirm state persisted.
 - **Snowflake/Databricks:** gate behind env-var presence (`pytest.mark.skipif`);
   fall back to config-validation-only tests when creds absent so CI stays green.
-- **Dagster-layer tests (gap):** `asset_factory` must be tested directly — assert a
-  YAML produces the expected `@dlt_assets` + `ScheduleDefinition` (cron parse). Not
-  just exercised via E2E.
+- **Airflow-layer tests (gap):** `dag_factory` must be tested directly — assert a
+  YAML produces the expected `DAG` (id, `schedule`, `max_active_runs`) and a
+  `PipelineTasksGroup` containing the expected per-resource tasks. Not just
+  exercised via E2E.
 - **REST source mocking (gap):** hermetic REST tests need a mocking strategy
   (`responses` / VCR cassettes) so unit/integration runs don't depend on a live
   public API.
-- **Data-quality checks (gap):** add Dagster asset checks beyond "did it run" —
-  source-vs-destination row-count reconciliation, null/PK checks, volume-anomaly
-  detection (row count drops sharply but run "succeeds"). Decide which are v1.
+- **Data-quality checks (gap):** add Airflow task-level checks beyond "did it
+  run" — source-vs-destination row-count reconciliation
+  (`SQLCheckOperator`), null/PK checks, volume-anomaly detection (row count
+  drops sharply but run "succeeds"). Decide which are v1.
 
 ## Tricky Parts
 
@@ -319,27 +360,43 @@ zero code change.
   *and* separate staging-location creds (S3/ADLS volume). Keep all out of YAML.
 - **Schema evolution:** expose dlt `schema_contract` per pipeline. `evolve`
   default is convenient but silently adds columns; recommend `freeze` for
-  regulated destinations. Surface schema-change events in Dagster asset metadata.
+  regulated destinations. Surface schema-change events in DAG-run metadata
+  via `XCom` or task logs.
 - **State persistence across containers:** dlt stores incremental cursors +
   schema in the *destination* dataset (`_dlt_*` tables) — durable, survives
   restarts. Put local `~/.dlt` working dir on a named volume too. Point
-  Dagster's run/event storage at persistent Postgres in `dagster.yaml` (not
+  Airflow's metadata DB at the persistent `postgres-airflow` service (not the
   default SQLite). Prevent overlapping runs of the same pipeline (cursor
-  corruption) via Dagster concurrency limits.
-- **Monitoring:** Dagster gives run-level observability; add failure hooks +
-  freshness sensors (catch silently-not-running schedules). For CDC, monitor
-  replication slot lag on the source DB — outside Dagster's view, expose as a
-  custom asset check. Surface dlt load metrics into Dagster asset metadata.
+  corruption) via `max_active_runs=1` on the generated `DAG`, plus a
+  per-pipeline `pool` if a single pipeline can fan out into concurrent task
+  instances.
+- **Monitoring:** Airflow gives run-level observability via task instance
+  state + DAG run state. Add `on_failure_callback` and freshness via
+  `Dataset`/`DatasetEvent` (catch silently-not-running schedules). For CDC,
+  monitor replication slot lag on the source DB — outside Airflow's view,
+  expose via a periodic check task that emits a metric and fails the DAG when
+  over threshold. Surface dlt load metrics into XCom for the UI.
+- **dlt Airflow helper caveats:** `PipelineTasksGroup` runs each dlt resource
+  in a separate Airflow task; ensure `pipeline_factory` returns a
+  `dlt.Pipeline` whose `source()` exposes resources discoverable by the
+  helper. Document this contract in `pipeline_factory.py`.
+- **Airflow install fragility:** Airflow refuses unpinned dependency
+  resolution. Always install with the matching
+  `constraints-<version>-<python>.txt`. Document in `pyproject.toml`
+  comments and the CI workflow; pin the Python version alongside.
 - **Backfill / initial load (gap):** first full load of a large source table is
   the risky run — needs a chunked / resumable strategy (dlt incremental
   `initial_value`, partitioned ranges), not one giant transaction. No story yet.
 - **Secret leakage (gap):** dlt can echo credentials in logs/tracebacks — add log
-  scrubbing. CDC needs a dedicated source DB user with `REPLICATION` (least
-  privilege), not a superuser.
+  scrubbing. Airflow renders task templates in logs; use Airflow
+  `Connection`/`Variable` objects (not f-string credentials into operator
+  args) so the UI mask filter catches them. CDC needs a dedicated source DB
+  user with `REPLICATION` (least privilege), not a superuser.
 - **Pipeline lifecycle (gap):** deleting a `pipelines/*.yml` currently orphans the
-  destination dataset, CDC replication slot, and Dagster schedule. Decide cleanup
-  path (manual runbook vs. tombstone). Also: `models.py` schema versioning when
-  the YAML contract changes shape.
+  destination dataset, CDC replication slot, and the Airflow DAG (which then
+  disappears from the UI, possibly mid-run). Decide cleanup path (manual
+  runbook vs. tombstone). Also: `models.py` schema versioning when the YAML
+  contract changes shape.
 - **Incremental edge cases (gap):** late-arriving rows, non-monotonic cursor
   fields, timezone skew on `updated_at`, cursor gaps. Document supported
   guarantees per sync mode.
@@ -350,25 +407,28 @@ zero code change.
 ## Open Considerations (not scoped — decide during build)
 
 These are deferred notes, not v1 segments. Revisit before/while building.
-(Prod deployment, run launcher, and secrets backend are now scoped under
+(Prod deployment, executor, and secrets backend are now scoped under
 Segment 10.)
 
 - **Multi-environment config:** same pipeline YAML needs to point at different
   connections per env (dev/staging/prod). Logical connection names help, but
   env-specific overrides + promotion flow are unspecified. Decide before
   Segment 10 finalizes the secrets-resolver layer.
-- **Alert depth:** failure hooks + freshness sensors cover the basics. Still
-  missing: severity / routing, dedup (avoid alert storms on repeated failures),
-  schema-change alerts, SLA definitions, and daemon/heartbeat health ("who
-  watches the watcher").
+- **Alert depth:** failure callbacks + freshness via `Dataset` events cover
+  the basics. Still missing: severity / routing, dedup (avoid alert storms on
+  repeated failures), schema-change alerts, SLA definitions, and
+  scheduler/triggerer heartbeat health ("who watches the watcher").
 
 ## Critical Files
 - `src/data_pipeline_template/config/models.py` — YAML schema contract;
   everything depends on it.
 - `src/data_pipeline_template/pipeline_factory.py` — core config → dlt pipeline.
-  **Must not import `dagster`** (orchestrator-agnostic boundary; see Design
+  **Must not import `airflow`** (orchestrator-agnostic boundary; see Design
   principle #2).
-- `src/data_pipeline_template/dagster/asset_factory.py` — YAML → Dagster assets.
+- `src/data_pipeline_template/airflow/dag_factory.py` — YAML → Airflow DAG with
+  `PipelineTasksGroup`.
 - `src/data_pipeline_template/sources/registry.py` — extension point for new
   source types.
+- `dags/data_pipeline_dags.py` — DagBag entry-point; assigns generated DAGs
+  into module `globals()`.
 - `docker/docker-compose.yml` — local end-to-end test/dev environment.
