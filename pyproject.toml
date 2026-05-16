@@ -1,13 +1,18 @@
 [project]
 name = "data_pipeline_template"
 version = "0.1.0"
-description = "Reusable dlt + Dagster Fivetran replacement"
+description = "Reusable dlt + Airflow Fivetran replacement"
 requires-python = ">=3.12,<3.13"
+# Airflow refuses unpinned dependency resolution. Install with the matching
+# constraints file, e.g.:
+#   uv pip install "apache-airflow==2.10.*" \
+#     --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.3/constraints-3.12.txt"
+# uv sync will not honor Airflow's constraints automatically — see README.
 dependencies = [
   "dlt[duckdb,postgres,filesystem]>=1.0",
-  "dagster>=1.8",
-  "dagster-webserver>=1.8",
-  "dagster-dlt>=0.24",
+  "apache-airflow>=2.10,<3",
+  "apache-airflow-providers-cncf-kubernetes>=8",
+  "apache-airflow-providers-postgres>=5",
   "pydantic>=2.7",
   "pyyaml>=6.0",
 ]
@@ -47,10 +52,14 @@ src = ["src", "tests"]
 select = ["E", "F", "I", "TID", "UP", "B"]
 
 [tool.ruff.lint.flake8-tidy-imports]
-banned-module-level-imports = ["dagster", "dagster_dlt", "dagster_webserver"]
+# Enforce Design principle #2: only the airflow subpackage + dags/ entry-point
+# may import airflow. Keeps pipeline_factory + sources/ + destinations/ +
+# config/ orchestrator-agnostic.
+banned-module-level-imports = ["airflow"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/data_pipeline_template/dagster/**" = ["TID253"]
+"src/data_pipeline_template/airflow/**" = ["TID253"]
+"dags/**" = ["TID253"]
 "tests/**" = ["TID253"]
 
 [tool.mypy]

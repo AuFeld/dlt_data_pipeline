@@ -14,7 +14,7 @@ def test_subpackages_importable() -> None:
         "data_pipeline_template.sources.sql_database",
         "data_pipeline_template.sources.filesystem",
         "data_pipeline_template.sources.pg_cdc",
-        "data_pipeline_template.dagster",
+        "data_pipeline_template.airflow",
     ):
         __import__(sub)
 
