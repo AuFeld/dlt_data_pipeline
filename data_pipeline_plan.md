@@ -255,6 +255,70 @@ catches them.
   — proves the image works for per-task pod invocation under
   `KubernetesExecutor`.
 
+### Segment 6.5 — Developer ergonomics (Claude-friendly introspection)
+- `CLAUDE.md` at repo root — minimal agent brief: where new pipeline YAMLs
+  live, the logical-connection-name → env-var convention
+  (`SOURCES__<TYPE>__<CONN>__CREDENTIALS`,
+  `DESTINATION__<CONN>__CREDENTIALS`), how to validate without running, how
+  to introspect available source types, the orchestrator-agnostic boundary
+  (Design principle #2), and the "do not edit cfg, env-override" rule from
+  Segment 6. Pure context, no automation. Read automatically by Claude Code
+  on session start.
+- JSON Schema export from pydantic models: new CLI subcommand
+  `python -m data_pipeline_template config schema` dumps
+  `PipelineConfig.model_json_schema()`; committed at `pipelines/_schema.json`.
+  Each `pipelines/*.yml` gets a top-line
+  `# yaml-language-server: $schema=./_schema.json` so LSP-aware editors
+  (and Claude) get inline field validation + autocomplete. Pre-commit hook
+  regenerates `_schema.json` and fails if it drifts from the models.
+- Introspection CLI subcommands under existing `python -m
+  data_pipeline_template` entry point:
+  - `sources list` — dump the `data_pipeline_template.sources` entry-point
+    group (no more `python -c "from importlib.metadata import …"` one-liners).
+  - `sources describe <type>` — print that source's pydantic config schema
+    + the env-var key its credentials resolve from.
+  - `pipelines validate [name]` — load + pydantic-validate one or all
+    YAMLs; exit non-zero on failure, no pipeline run.
+  - `pipelines doctor` — for each pipeline, probe the env vars its source +
+    destination would resolve and report any missing. Sub-second feedback
+    vs. a full pipeline run that fails on the first missing credential.
+- **Done when:** `CLAUDE.md` present at repo root; `pipelines/_schema.json`
+  committed and regenerable via `python -m data_pipeline_template config
+  schema`; pre-commit fails on drift; every `pipelines/*.yml` carries the
+  `$schema` directive; `sources list / describe`, `pipelines validate /
+  doctor` subcommands work; unit tests cover each subcommand's exit code on
+  the happy + error paths.
+
+### Segment 6.6 — Agent integration surface (borrowed from dlt LLM-native workflow)
+- **MCP server** (`src/data_pipeline_template/mcp_server.py`, FastMCP) exposing
+  the four Segment 6.5 introspection subcommands (`sources_list`,
+  `sources_describe`, `pipelines_validate`, `pipelines_doctor`) as native MCP
+  tools so Claude Code / Codex call them without subprocess overhead. Registered
+  via committed `.mcp.json`. Prereq refactor: split each `cli/*_cmds.py`
+  command into a pure data helper (returns structured dict) + a print-and-exit
+  CLI wrapper; MCP tools call the helpers.
+- **`AGENTS.md`** becomes the canonical agent brief (former `CLAUDE.md` body,
+  lead paragraph genericized); `CLAUDE.md` becomes a symlink to it so Codex
+  and Claude Code read identical content from one source of truth.
+- **Dry-run extract** — `--limit N` (calls `DltSource.add_limit(N)`) and
+  `--no-load` (calls `pipeline.extract()` + `pipeline.normalize()`, skips
+  `pipeline.load()`) flags on the existing `run` subcommand. New
+  `pipeline_factory.run_dry()` reuses existing `build()`. Validates source
+  connectivity and schema inference without writing to destination.
+- **`/add-pipeline` slash skill** at `.claude/skills/add-pipeline/SKILL.md` —
+  composes scaffolder → `pipelines validate` → `pipelines doctor` into one
+  agent workflow primitive. Pulls a minimal `scripts/new_pipeline.py` forward
+  from Segment 9 (emits a YAML skeleton from source + destination metadata
+  with TODO markers; ~80 LOC). Segment 9 still owns the polished version
+  (CI workflow, alerting, scaffolder UX).
+- **Done when:** `uv run python -m data_pipeline_template.mcp_server` lists
+  four tools; existing CLI tests stay green after the helper extraction;
+  `run example_rest_to_duckdb --limit 1 --no-load` exits 0 without writing a
+  duckdb dataset; `CLAUDE.md` resolves to `AGENTS.md` via symlink (mode
+  `120000` under git); `scripts/new_pipeline.py foo --source rest_api --dest
+  duckdb` emits a parseable-but-incomplete YAML; the `add-pipeline` skill
+  exists with frontmatter describing trigger phrases.
+
 ### Segment 7 — CDC source (Postgres logical replication)
 - `sources/pg_cdc.py` (wraps dlt `pg_replication`), `sync.mode: cdc` handling
   (slot + publication, snapshot + streaming), short-interval schedule on the

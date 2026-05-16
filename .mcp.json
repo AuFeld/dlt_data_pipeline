@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "data_pipeline_template": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "data_pipeline_template.mcp_server"]
+    }
+  }
+}

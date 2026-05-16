@@ -81,7 +81,7 @@ def build(cfg: PipelineConfig) -> RunnablePipeline:
     )
 
 
-def run(name: str, pipelines_root: Path | str = Path("pipelines")) -> LoadInfo:
+def _resolve(name: str, pipelines_root: Path | str) -> RunnablePipeline:
     configs = load_pipelines(pipelines_root)
     try:
         cfg = configs[name]
@@ -90,11 +90,45 @@ def run(name: str, pipelines_root: Path | str = Path("pipelines")) -> LoadInfo:
         raise KeyError(
             f"pipeline {name!r} not found under {pipelines_root!r}; available: {available}"
         ) from None
-    runnable = build(cfg)
+    return build(cfg)
+
+
+def run(
+    name: str,
+    pipelines_root: Path | str = Path("pipelines"),
+    limit: int | None = None,
+) -> LoadInfo:
+    runnable = _resolve(name, pipelines_root)
+    if limit is not None:
+        runnable.source.add_limit(limit)
     return runnable.pipeline.run(
         runnable.source,
         write_disposition=runnable.write_disposition.value,
     )
+
+
+def run_dry(
+    name: str,
+    pipelines_root: Path | str = Path("pipelines"),
+    limit: int | None = None,
+) -> dict[str, str]:
+    """Extract + normalize only — skip destination load.
+
+    Validates source connectivity + schema inference without writing to the
+    destination. Snowflake / Databricks destinations still construct via
+    ``build()``, so dry-run won't help with stubbed destinations until
+    Segment 8 fills them in.
+    """
+    runnable = _resolve(name, pipelines_root)
+    if limit is not None:
+        runnable.source.add_limit(limit)
+    extract_info = runnable.pipeline.extract(runnable.source)
+    normalize_info = runnable.pipeline.normalize()
+    return {
+        "name": name,
+        "extract": str(extract_info),
+        "normalize": str(normalize_info),
+    }
 
 
 if __name__ == "__main__":

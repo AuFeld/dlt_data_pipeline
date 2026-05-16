@@ -25,3 +25,12 @@ repos:
       - id: ruff
         args: ["--fix"]
       - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: regen-pipeline-schema
+        name: pipelines/_schema.json matches pydantic models
+        entry: uv run python -m data_pipeline_template config schema --check
+        language: system
+        pass_filenames: false
+        files: ^(src/data_pipeline_template/config/models\.py|pipelines/_schema\.json)$
