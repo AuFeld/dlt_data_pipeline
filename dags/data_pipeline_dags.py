@@ -31,5 +31,10 @@ except ConfigError as e:
 for _name, _cfg in _configs.items():
     try:
         globals()[_name] = build_dag(_cfg)
+    except NotImplementedError as e:
+        # Source / sync mode not landed yet (e.g. sql_database -> Segment 5,
+        # cdc -> Segment 7). Single-line warning; full traceback would spam
+        # the scheduler log on every DagBag re-parse.
+        log.warning("skipping pipeline %r: %s", _name, e)
     except Exception:
         log.exception("failed to build DAG for pipeline %r", _name)
