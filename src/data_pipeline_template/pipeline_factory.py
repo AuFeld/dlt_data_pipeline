@@ -9,6 +9,7 @@ it directly.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -62,13 +63,17 @@ def build(cfg: PipelineConfig) -> RunnablePipeline:
         _apply_primary_key(source, cfg.sync.primary_key)
 
     destination = build_destination(cfg.destination)
-    pipelines_state_dir = str(Path(".dlt") / "pipelines" / cfg.name)
-    pipeline = dlt.pipeline(
-        pipeline_name=cfg.name,
-        destination=destination,
-        dataset_name=cfg.destination.dataset,
-        pipelines_dir=pipelines_state_dir,
-    )
+    # Under Airflow, ``PipelineTasksGroup`` sets ``DLT_DATA_DIR`` to a per-task
+    # temp dir and rejects pipelines whose ``pipelines_dir`` overrides it. Skip
+    # the explicit arg in that case so dlt resolves the dir from the env var.
+    kwargs: dict[str, Any] = {
+        "pipeline_name": cfg.name,
+        "destination": destination,
+        "dataset_name": cfg.destination.dataset,
+    }
+    if "DLT_DATA_DIR" not in os.environ:
+        kwargs["pipelines_dir"] = str(Path(".dlt") / "pipelines" / cfg.name)
+    pipeline = dlt.pipeline(**kwargs)
     return RunnablePipeline(
         pipeline=pipeline,
         source=source,

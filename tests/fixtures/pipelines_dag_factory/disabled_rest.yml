@@ -1,0 +1,19 @@
+name: disabled_rest
+source:
+  type: rest_api
+  connection: demo_api
+  config:
+    base_url: https://example.com/
+    endpoints:
+      - thing
+sync:
+  mode: full_refresh
+destination:
+  type: duckdb
+  connection: local_duckdb
+  dataset: raw_disabled
+schedule:
+  cron: "0 6 * * *"
+  enabled: false
+options:
+  write_disposition: replace

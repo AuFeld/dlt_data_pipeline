@@ -109,6 +109,18 @@ class OptionsConfig(_StrictModel):
     schema_contract: SchemaContract = SchemaContract.evolve
 
 
+class ResourcesConfig(_StrictModel):
+    """Optional pod resource requests/limits for KubernetesExecutor.
+
+    LocalExecutor ignores these; KubernetesExecutor (Segment 10) consumes
+    them via ``executor_config={"pod_override": V1Pod(...)}`` on each task.
+    Used as both k8s requests AND limits (Guaranteed QoS).
+    """
+
+    cpu: str | None = None
+    memory: str | None = None
+
+
 class PipelineConfig(_StrictModel):
     name: str
     source: SourceConfig
@@ -116,6 +128,7 @@ class PipelineConfig(_StrictModel):
     destination: DestinationConfig
     schedule: ScheduleConfig
     options: OptionsConfig = Field(default_factory=OptionsConfig)
+    resources: ResourcesConfig = Field(default_factory=ResourcesConfig)
 
     @field_validator("name")
     @classmethod

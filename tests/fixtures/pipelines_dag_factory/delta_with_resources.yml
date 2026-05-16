@@ -1,0 +1,21 @@
+name: delta_with_resources
+source:
+  type: rest_api
+  connection: demo_api
+  config:
+    base_url: https://example.com/
+    endpoints:
+      - thing
+sync:
+  mode: full_refresh
+destination:
+  type: duckdb
+  connection: local_duckdb
+  dataset: raw_delta
+schedule:
+  cron: "0 6 * * *"
+options:
+  write_disposition: replace
+resources:
+  cpu: "500m"
+  memory: "1Gi"
