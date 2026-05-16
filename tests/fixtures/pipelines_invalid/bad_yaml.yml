@@ -1,0 +1,7 @@
+name: bad_yaml
+source:
+  type: rest_api
+  connection: x
+  config: [: this is not valid yaml mapping
+sync:
+  mode: full_refresh

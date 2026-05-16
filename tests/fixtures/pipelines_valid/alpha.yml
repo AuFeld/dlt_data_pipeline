@@ -1,0 +1,16 @@
+name: alpha
+source:
+  type: rest_api
+  connection: demo_api
+  config:
+    base_url: https://example.com/
+sync:
+  mode: full_refresh
+destination:
+  type: duckdb
+  connection: local_duckdb
+  dataset: raw_alpha
+schedule:
+  cron: "0 6 * * *"
+options:
+  write_disposition: replace

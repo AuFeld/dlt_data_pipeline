@@ -1,0 +1,23 @@
+name: example_pg_to_pg_incremental
+source:
+  type: sql_database
+  connection: pg_source
+  config:
+    schema: public
+    tables:
+      - orders
+      - customers
+sync:
+  mode: incremental
+  cursor_field: updated_at
+  primary_key: id
+destination:
+  type: postgres
+  connection: pg_warehouse
+  dataset: raw_orders
+schedule:
+  cron: "0 */2 * * *"
+  enabled: true
+options:
+  write_disposition: merge
+  schema_contract: evolve

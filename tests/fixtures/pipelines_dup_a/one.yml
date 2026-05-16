@@ -1,0 +1,13 @@
+name: same_name
+source:
+  type: rest_api
+  connection: x
+  config: {}
+sync:
+  mode: full_refresh
+destination:
+  type: duckdb
+  connection: local
+  dataset: raw
+schedule:
+  cron: "0 * * * *"
