@@ -24,7 +24,7 @@ Unknown keys at any level are rejected (`extra="forbid"`) so typos fail loudly.
 | `source.type` | Builder lands in | Notes |
 | --- | --- | --- |
 | `rest_api` | Segment 3 | Wraps `dlt.sources.rest_api`. |
-| `sql_database` | Segment 5 | Postgres + MySQL via `dlt.sources.sql_database`. |
+| `sql_database` | Segment 5 | Wraps `dlt.sources.sql_database` (Postgres in v1; any SQLAlchemy URL). See `sql_database` config below. |
 | `filesystem` | Segment 8 | Local + S3, CSV/Parquet/JSONL. |
 | `pg_cdc` | Segment 7 | Postgres logical replication via `dlt.sources.pg_replication`. |
 
@@ -34,6 +34,27 @@ Unknown keys at any level are rejected (`extra="forbid"`) so typos fail loudly.
 
 `source.config` is a free-form mapping today; typed sub-models will be added
 per source type as each builder lands.
+
+### `sql_database` source config
+
+| Key | Required | Default | Notes |
+| --- | --- | --- | --- |
+| `tables` | yes | — | Non-empty list of table names. Drives per-table Airflow tasks. |
+| `schema` | no | dialect default | DB schema (e.g. `public`). |
+| `defer_table_reflect` | no | `true` | When `true`, the source does not open a DB connection at DAG-parse time. Required if you want strict reflected column types — set `false` to reflect on each parse. |
+| `backend` | no | `sqlalchemy` | Pass-through to dlt: `sqlalchemy` / `pyarrow` / `pandas` / `connectorx`. |
+| `chunk_size` | no | dlt default | Pass-through. |
+| `include_views` | no | `false` | Pass-through. |
+| `reflection_level` | no | `minimal` | Pass-through (`minimal` / `full` / `full_with_precision`). |
+
+Credentials resolve from `SOURCES__SQL_DATABASE__<CONNECTION_NAME_UPPER>__CREDENTIALS`
+(env) or `[sources.sql_database.<connection>.credentials]` in
+`.dlt/secrets.toml`. Value is any SQLAlchemy URL
+(e.g. `postgresql://user:pw@host:5432/db`, `sqlite:///path/to.db`).
+
+**Cursor constraint:** every table listed in `tables` must expose a column
+with the name set in `sync.cursor_field`. Per-table cursor overrides are a
+future enhancement.
 
 ## Sync modes — cross-field rules
 

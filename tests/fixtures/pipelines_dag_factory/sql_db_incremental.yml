@@ -1,0 +1,21 @@
+name: sql_db_incremental
+source:
+  type: sql_database
+  connection: sqlite_dag_test
+  config:
+    tables:
+      - orders
+      - customers
+sync:
+  mode: incremental
+  cursor_field: updated_at
+  primary_key: id
+destination:
+  type: duckdb
+  connection: local_duckdb
+  dataset: raw_sql
+schedule:
+  cron: "0 */2 * * *"
+  enabled: true
+options:
+  write_disposition: merge

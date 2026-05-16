@@ -2,22 +2,22 @@
 
 Proves Design principle #2 — orchestrator-agnostic core. Spawns a subprocess
 that pre-installs ``sys.modules["airflow"] = None`` so any attempted ``import
-airflow`` (or submodule) raises ``ImportError``, then exercises the factory.
+airflow`` (or submodule) raises ``ImportError``, then exercises the factory
+for both ``rest_api`` and ``sql_database`` sources.
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-_PROBE = """
+_PROBE_REST = """
 import sys
 
-# Block airflow + all submodules. Any module-level `import airflow.*` in the
-# factory or its transitive deps will now raise ImportError.
 class _Blocked:
     def __getattr__(self, name):
         raise ImportError("airflow is intentionally blocked for this boundary test")
@@ -55,16 +55,77 @@ assert runnable.source is not None
 print("ok")
 """
 
+_PROBE_SQL = """
+import sys
 
-def test_pipeline_factory_works_without_airflow(tmp_path: Path) -> None:
+sys.modules["airflow"] = None  # type: ignore[assignment]
+
+from data_pipeline_template import pipeline_factory  # noqa: F401
+from data_pipeline_template.config.models import (
+    DestinationConfig,
+    DestinationType,
+    OptionsConfig,
+    PipelineConfig,
+    ScheduleConfig,
+    SourceSqlDatabase,
+    SyncConfig,
+    SyncMode,
+    WriteDisposition,
+)
+
+cfg = PipelineConfig(
+    name="probe_sql_pipeline",
+    source=SourceSqlDatabase(
+        type="sql_database",
+        connection="sqlite_probe",
+        config={"tables": ["orders"]},
+    ),
+    sync=SyncConfig(mode=SyncMode.incremental, cursor_field="updated_at", primary_key="id"),
+    destination=DestinationConfig(
+        type=DestinationType.duckdb, connection="probe", dataset="raw"
+    ),
+    schedule=ScheduleConfig(cron="0 6 * * *", enabled=True),
+    options=OptionsConfig(write_disposition=WriteDisposition.merge),
+)
+
+runnable = pipeline_factory.build(cfg)
+assert runnable.pipeline is not None
+assert runnable.source is not None
+assert set(runnable.source.resources.keys()) == {"orders"}
+print("ok")
+"""
+
+
+def _run_probe(probe: str, tmp_path: Path, env_extra: dict[str, str] | None = None) -> None:
+    env = os.environ.copy()
+    if env_extra:
+        env.update(env_extra)
     result = subprocess.run(
-        [sys.executable, "-c", _PROBE],
+        [sys.executable, "-c", probe],
         cwd=tmp_path,
         capture_output=True,
         text=True,
         timeout=60,
+        env=env,
     )
     assert result.returncode == 0, (
         f"subprocess failed.\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
     )
     assert "ok" in result.stdout
+
+
+def test_pipeline_factory_works_without_airflow_rest(tmp_path: Path) -> None:
+    _run_probe(_PROBE_REST, tmp_path)
+
+
+def test_pipeline_factory_works_without_airflow_sql_database(tmp_path: Path) -> None:
+    db_path = tmp_path / "probe_source.db"
+    # SQLite file does not need to exist for deferred reflection — Engine is
+    # constructed lazily and never connected during build().
+    _run_probe(
+        _PROBE_SQL,
+        tmp_path,
+        env_extra={
+            "SOURCES__SQL_DATABASE__SQLITE_PROBE__CREDENTIALS": f"sqlite:///{db_path}",
+        },
+    )
