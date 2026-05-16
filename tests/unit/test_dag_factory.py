@@ -75,3 +75,30 @@ def test_build_dag_resources_pod_override(configs: dict) -> None:
         assert container.name == "base"
         assert container.resources.requests == {"cpu": "500m", "memory": "1Gi"}
         assert container.resources.limits == {"cpu": "500m", "memory": "1Gi"}
+
+
+def test_build_dag_sql_database_tasks_per_resource(
+    configs: dict, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The sql_database YAML must produce one Airflow task per declared table.
+
+    Uses a temp-file SQLite stand-in for the connection so the builder can
+    construct a real DltSource at DAG-build time (defer_table_reflect=True,
+    so no live DB call is required).
+    """
+    db = tmp_path / "dag_test.db"
+    db.touch()
+    monkeypatch.setenv(
+        "SOURCES__SQL_DATABASE__SQLITE_DAG_TEST__CREDENTIALS",
+        f"sqlite:///{db}",
+    )
+
+    cfg = configs["sql_db_incremental"]
+    dag = build_dag(cfg)
+
+    assert dag.dag_id == "sql_db_incremental"
+    tasks = _tasks_for(dag)
+    task_ids = {t.task_id for t in tasks}
+    assert any(t.endswith("_orders") for t in task_ids), task_ids
+    assert any(t.endswith("_customers") for t in task_ids), task_ids
+    assert all(t.task_id.startswith(f"{cfg.name}.") for t in tasks)

@@ -9,7 +9,7 @@ requires-python = ">=3.12,<3.13"
 #     --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.3/constraints-3.12.txt"
 # uv sync will not honor Airflow's constraints automatically — see README.
 dependencies = [
-  "dlt[duckdb,postgres,filesystem]>=1.0",
+  "dlt[duckdb,postgres,filesystem,sql_database]>=1.0",
   "apache-airflow>=2.10,<3",
   "apache-airflow-providers-cncf-kubernetes>=8",
   "apache-airflow-providers-postgres>=5",
