@@ -1,0 +1,36 @@
+# VCS + IDE
+.git
+.github
+.idea
+.vscode
+
+# Local venvs / caches
+.venv
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Local runtime state (re-created in containers / mounted via named volumes)
+airflow_home/logs
+airflow_home/airflow.db
+airflow_home/standalone_admin_password.txt
+airflow_home/webserver_config.py
+.dlt/*.duckdb
+.dlt/*.duckdb.wal
+.dlt/pipelines
+
+# Secrets — NEVER bake into the image. Compose injects via env_file at runtime.
+.dlt/secrets.toml
+.env
+.env.local
+.envrc
+
+# Tests not shipped in the production image. Bind-mount via `-v` when running
+# pytest inside compose (see scripts/seed_local.sh next-step output).
+tests
+
+# Plan / notes
+data_pipeline_plan.md

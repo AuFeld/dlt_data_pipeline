@@ -1,0 +1,171 @@
+# Segment 6 local stack: webserver + scheduler + triggerer + metadata DB +
+# source DB + destination DB. Same image used for every airflow role and for
+# one-shot CLI runs (`docker compose run --rm airflow-scheduler python -m
+# data_pipeline_template run <name>`). The image is also the prod K8s pod
+# image for Segment 10.
+#
+# Run from repo root via `docker compose -f docker/docker-compose.yml ...`,
+# or use scripts/seed_local.sh which wraps the bring-up + source-DB seed.
+#
+# IMPORTANT: `docker compose restart` does NOT re-read env_file. After editing
+# .env, recreate the airflow services to pick up new values:
+#   docker compose -f docker/docker-compose.yml up -d --force-recreate \
+#     --no-deps airflow-scheduler airflow-webserver airflow-triggerer
+
+name: dlt_data_pipeline
+
+x-airflow-common: &airflow-common
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  image: dlt_data_pipeline:local
+  env_file:
+    - ../.env
+  environment:
+    # AIRFLOW_HOME must be absolute and inside the image (chowned to airflow
+    # uid in Dockerfile). Pin it here so the relative `./airflow_home` value
+    # from `.env.example` (intended for host-mode) doesn't leak in via
+    # env_file and break log/cfg discovery.
+    AIRFLOW_HOME: /opt/airflow
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-airflow:5432/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/app/dags
+    AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "False"
+    PYTHONPATH: /opt/app/src
+  volumes:
+    # Live edits during dev — image bakes copies; these overlay them.
+    - ../dags:/opt/app/dags
+    - ../pipelines:/opt/app/pipelines
+    - ../src:/opt/app/src
+    # State that must survive `docker compose restart`.
+    - airflow_logs:/opt/airflow/logs
+    - dlt_data:/opt/app/.dlt
+  depends_on:
+    postgres-airflow:
+      condition: service_healthy
+    airflow-init:
+      condition: service_completed_successfully
+
+services:
+  postgres-airflow:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_airflow_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  postgres-source:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: source
+      POSTGRES_PASSWORD: source
+      POSTGRES_DB: source_db
+    # Pre-configure WAL for Segment 7 (pg_cdc) so this service doesn't need
+    # to be torn down later. wal_level=logical alone is cheap on an idle DB
+    # and only matters once a replication slot exists.
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=4
+      - -c
+      - max_wal_senders=4
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_source_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U source -d source_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  postgres-destination:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: warehouse
+      POSTGRES_PASSWORD: warehouse
+      POSTGRES_DB: warehouse_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_destination_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U warehouse -d warehouse_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  airflow-init:
+    <<: *airflow-common
+    # Init only depends on the metadata DB. Override the common depends_on
+    # so it doesn't wait on itself.
+    depends_on:
+      postgres-airflow:
+        condition: service_healthy
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        airflow db migrate
+        airflow users create \
+          --username admin --password admin \
+          --firstname Local --lastname Dev \
+          --role Admin --email admin@example.com || true
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: ["airflow", "webserver"]
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: ["airflow", "scheduler"]
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$$(hostname)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  airflow-triggerer:
+    <<: *airflow-common
+    command: ["airflow", "triggerer"]
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type TriggererJob --hostname \"$$(hostname)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  postgres_airflow_data:
+  postgres_source_data:
+  postgres_destination_data:
+  airflow_logs:
+  dlt_data:
