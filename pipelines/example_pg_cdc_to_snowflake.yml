@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./_schema.json
 name: example_pg_cdc_to_snowflake
 source:
   type: pg_cdc

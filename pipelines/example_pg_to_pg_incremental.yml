@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./_schema.json
 name: example_pg_to_pg_incremental
 source:
   type: sql_database

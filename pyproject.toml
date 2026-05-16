@@ -15,6 +15,7 @@ dependencies = [
   "apache-airflow-providers-postgres>=5",
   "pydantic>=2.7",
   "pyyaml>=6.0",
+  "fastmcp>=2",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +38,12 @@ rest_api = "data_pipeline_template.sources.rest_api:builder"
 sql_database = "data_pipeline_template.sources.sql_database:builder"
 filesystem = "data_pipeline_template.sources.filesystem:builder"
 pg_cdc = "data_pipeline_template.sources.pg_cdc:builder"
+
+[project.entry-points."data_pipeline_template.sources.metadata"]
+rest_api = "data_pipeline_template.sources.rest_api._metadata:metadata"
+sql_database = "data_pipeline_template.sources.sql_database._metadata:metadata"
+filesystem = "data_pipeline_template.sources.filesystem._metadata:metadata"
+pg_cdc = "data_pipeline_template.sources.pg_cdc._metadata:metadata"
 
 [build-system]
 requires = ["hatchling"]

@@ -1,0 +1,330 @@
+{
+  "$defs": {
+    "DestinationConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "connection": {
+          "title": "Connection",
+          "type": "string"
+        },
+        "dataset": {
+          "title": "Dataset",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/DestinationType"
+        }
+      },
+      "required": [
+        "type",
+        "connection",
+        "dataset"
+      ],
+      "title": "DestinationConfig",
+      "type": "object"
+    },
+    "DestinationType": {
+      "enum": [
+        "postgres",
+        "snowflake",
+        "databricks",
+        "duckdb"
+      ],
+      "title": "DestinationType",
+      "type": "string"
+    },
+    "OptionsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_contract": {
+          "$ref": "#/$defs/SchemaContract",
+          "default": "evolve"
+        },
+        "write_disposition": {
+          "$ref": "#/$defs/WriteDisposition",
+          "default": "append"
+        }
+      },
+      "title": "OptionsConfig",
+      "type": "object"
+    },
+    "ResourcesConfig": {
+      "additionalProperties": false,
+      "description": "Optional pod resource requests/limits for KubernetesExecutor.\n\nLocalExecutor ignores these; KubernetesExecutor (Segment 10) consumes\nthem via ``executor_config={\"pod_override\": V1Pod(...)}`` on each task.\nUsed as both k8s requests AND limits (Guaranteed QoS).",
+      "properties": {
+        "cpu": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu"
+        },
+        "memory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory"
+        }
+      },
+      "title": "ResourcesConfig",
+      "type": "object"
+    },
+    "ScheduleConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "cron": {
+          "title": "Cron",
+          "type": "string"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cron"
+      ],
+      "title": "ScheduleConfig",
+      "type": "object"
+    },
+    "SchemaContract": {
+      "enum": [
+        "evolve",
+        "freeze",
+        "discard_row"
+      ],
+      "title": "SchemaContract",
+      "type": "string"
+    },
+    "SourceFilesystem": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "additionalProperties": true,
+          "title": "Config",
+          "type": "object"
+        },
+        "connection": {
+          "title": "Connection",
+          "type": "string"
+        },
+        "type": {
+          "const": "filesystem",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "connection",
+        "type"
+      ],
+      "title": "SourceFilesystem",
+      "type": "object"
+    },
+    "SourcePgCdc": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "additionalProperties": true,
+          "title": "Config",
+          "type": "object"
+        },
+        "connection": {
+          "title": "Connection",
+          "type": "string"
+        },
+        "type": {
+          "const": "pg_cdc",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "connection",
+        "type"
+      ],
+      "title": "SourcePgCdc",
+      "type": "object"
+    },
+    "SourceRestApi": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "additionalProperties": true,
+          "title": "Config",
+          "type": "object"
+        },
+        "connection": {
+          "title": "Connection",
+          "type": "string"
+        },
+        "type": {
+          "const": "rest_api",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "connection",
+        "type"
+      ],
+      "title": "SourceRestApi",
+      "type": "object"
+    },
+    "SourceSqlDatabase": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "additionalProperties": true,
+          "title": "Config",
+          "type": "object"
+        },
+        "connection": {
+          "title": "Connection",
+          "type": "string"
+        },
+        "type": {
+          "const": "sql_database",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "connection",
+        "type"
+      ],
+      "title": "SourceSqlDatabase",
+      "type": "object"
+    },
+    "SyncConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor_field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor Field"
+        },
+        "mode": {
+          "$ref": "#/$defs/SyncMode"
+        },
+        "primary_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Primary Key"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "SyncConfig",
+      "type": "object"
+    },
+    "SyncMode": {
+      "enum": [
+        "full_refresh",
+        "incremental",
+        "cdc"
+      ],
+      "title": "SyncMode",
+      "type": "string"
+    },
+    "WriteDisposition": {
+      "enum": [
+        "append",
+        "replace",
+        "merge"
+      ],
+      "title": "WriteDisposition",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "destination": {
+      "$ref": "#/$defs/DestinationConfig"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "options": {
+      "$ref": "#/$defs/OptionsConfig"
+    },
+    "resources": {
+      "$ref": "#/$defs/ResourcesConfig"
+    },
+    "schedule": {
+      "$ref": "#/$defs/ScheduleConfig"
+    },
+    "source": {
+      "discriminator": {
+        "mapping": {
+          "filesystem": "#/$defs/SourceFilesystem",
+          "pg_cdc": "#/$defs/SourcePgCdc",
+          "rest_api": "#/$defs/SourceRestApi",
+          "sql_database": "#/$defs/SourceSqlDatabase"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/SourceRestApi"
+        },
+        {
+          "$ref": "#/$defs/SourceSqlDatabase"
+        },
+        {
+          "$ref": "#/$defs/SourceFilesystem"
+        },
+        {
+          "$ref": "#/$defs/SourcePgCdc"
+        }
+      ],
+      "title": "Source"
+    },
+    "sync": {
+      "$ref": "#/$defs/SyncConfig"
+    }
+  },
+  "required": [
+    "name",
+    "source",
+    "sync",
+    "destination",
+    "schedule"
+  ],
+  "title": "PipelineConfig",
+  "type": "object"
+}

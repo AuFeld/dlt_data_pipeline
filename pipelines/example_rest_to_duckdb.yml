@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./_schema.json
 name: example_rest_to_duckdb
 source:
   type: rest_api
