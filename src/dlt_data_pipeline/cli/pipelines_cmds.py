@@ -12,7 +12,7 @@ import os
 import sys
 from enum import Enum, StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import dlt
 
@@ -364,7 +364,7 @@ def cmd_promote(args: argparse.Namespace) -> int:
             print(err, file=sys.stderr)
         return 1
 
-    changes = report["changes"]  # type: ignore[index]
+    changes = cast(list[dict[str, Any]], report["changes"])
     print(f"pipeline: {report['name']}")
     print(f"  {report['from_env']} -> {report['to_env']}")
     if not changes:
