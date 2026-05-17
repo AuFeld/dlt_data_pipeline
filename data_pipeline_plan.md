@@ -1,4 +1,4 @@
-# Plan: `data_pipeline_template` — a dlt + Airflow Fivetran replacement
+# Plan: a dlt + Airflow Fivetran replacement
 
 ## Context
 
@@ -535,6 +535,34 @@ direction too. `README.md` is currently a 21-byte stub.
 Promoted from former "Tricky Parts (gap)" items — these have grown beyond
 "decide during build" and need explicit scope.
 
+- **Destination env-var convention fix (Segment 9 follow-up):** the
+  destinations metadata advertises
+  `DESTINATION__<TYPE>__<CONNECTION>__CREDENTIALS`
+  (see `src/data_pipeline_template/destinations/_metadata.py:37,45` and
+  `AGENTS.md:44-45`), but `destinations/factory.py` constructs each
+  destination with `destination_name=connection`, so dlt's actual lookup
+  path is `DESTINATION__<CONNECTION>__CREDENTIALS__*` — no type segment.
+  `.env.example:35` already uses the working form
+  (`DESTINATION__PG_WAREHOUSE__CREDENTIALS=...`). `tests/unit/test_destinations_factory.py:44-65`
+  already documents + locks the working behavior, so the metadata is the
+  bug. Fix scope:
+  - `destinations/_metadata.py` — drop `__<TYPE>__` segment from postgres
+    + snowflake `env_var_template`.
+  - `AGENTS.md` — update env-var template doc.
+  - Tests with hard-coded type-prefixed env vars:
+    `tests/unit/test_destinations_factory_config.py:43,64`,
+    `tests/unit/test_new_pipeline_scaffolder.py:158`,
+    `tests/unit/test_cli_pipelines.py:14`,
+    `tests/integration/test_destinations_snowflake.py:86`,
+    `tests/integration/test_alerting_e2e.py:38`.
+  - `.github/workflows/ci.yml:76` — fix the
+    `integration-postgres` env var.
+  - Re-run `pipelines doctor` against every example YAML; verify each
+    resolves under the corrected template.
+  - **Done when:** `RUN_LIVE_PG=1 uv run pytest tests/integration -m "postgres and not cdc"`
+    against `docker compose up postgres-source postgres-destination`
+    passes locally + in CI; `pipelines doctor` reports the same env-var
+    key the user actually sets.
 - **Backfill / initial-load strategy:** chunked / resumable loads via dlt
   `initial_value` partitioned ranges. Surface as YAML
   `sync.backfill.chunk_size` + `sync.backfill.partition_field`. Add a new

@@ -1,5 +1,62 @@
 {
   "$defs": {
+    "AlertSeverity": {
+      "enum": [
+        "P1",
+        "P2",
+        "info"
+      ],
+      "title": "AlertSeverity",
+      "type": "string"
+    },
+    "AlertsConfig": {
+      "additionalProperties": false,
+      "description": "Per-pipeline alert routing knobs.\n\nWebhook URL, default channels per severity, and SMTP credentials are\ndeployment concerns and live in env vars (see ``observability.alerts``\nmodule docstring). YAML carries only per-pipeline overrides.",
+      "properties": {
+        "dedup_window_minutes": {
+          "default": 15,
+          "maximum": 1440,
+          "minimum": 0,
+          "title": "Dedup Window Minutes",
+          "type": "integer"
+        },
+        "email_recipients": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Email Recipients",
+          "type": "array"
+        },
+        "on_schema_change": {
+          "default": true,
+          "title": "On Schema Change",
+          "type": "boolean"
+        },
+        "on_sla_miss": {
+          "default": true,
+          "title": "On Sla Miss",
+          "type": "boolean"
+        },
+        "severity": {
+          "$ref": "#/$defs/AlertSeverity",
+          "default": "P2"
+        },
+        "slack_channel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Slack Channel"
+        }
+      },
+      "title": "AlertsConfig",
+      "type": "object"
+    },
     "DestinationConfig": {
       "additionalProperties": false,
       "properties": {
@@ -272,6 +329,9 @@
   },
   "additionalProperties": false,
   "properties": {
+    "alerts": {
+      "$ref": "#/$defs/AlertsConfig"
+    },
     "destination": {
       "$ref": "#/$defs/DestinationConfig"
     },

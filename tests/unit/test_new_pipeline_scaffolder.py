@@ -96,3 +96,117 @@ def test_rejects_unknown_source(tmp_path: Path) -> None:
                 str(tmp_path),
             ]
         )
+
+
+def test_post_write_validate_returns_zero_for_sql_postgres(tmp_path: Path) -> None:
+    rc = scaffolder.main(
+        [
+            "demo_sql_pg",
+            "--source",
+            "sql_database",
+            "--dest",
+            "postgres",
+            "--pipelines-root",
+            str(tmp_path),
+        ]
+    )
+    assert rc == 0
+    out = tmp_path / "demo_sql_pg.yml"
+    assert out.exists()
+    from data_pipeline_template.cli.pipelines_cmds import validate_pipelines
+
+    report = validate_pipelines(tmp_path, "demo_sql_pg")
+    assert report["status"] == "ok", report
+
+
+def test_post_write_validate_failure_unlinks_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        scaffolder,
+        "validate_pipelines",
+        lambda root, name: {"status": "error", "errors": ["broken"], "pipelines": []},
+    )
+    rc = scaffolder.main(
+        [
+            "wont_keep",
+            "--source",
+            "rest_api",
+            "--dest",
+            "duckdb",
+            "--pipelines-root",
+            str(tmp_path),
+        ]
+    )
+    assert rc == 2
+    assert not (tmp_path / "wont_keep.yml").exists()
+
+
+def test_destination_metadata_env_var_hint_present(tmp_path: Path) -> None:
+    scaffolder.main(
+        [
+            "with_dest_meta",
+            "--source",
+            "rest_api",
+            "--dest",
+            "postgres",
+            "--pipelines-root",
+            str(tmp_path),
+        ]
+    )
+    body = (tmp_path / "with_dest_meta.yml").read_text()
+    assert "DESTINATION__POSTGRES__POSTGRES_CONN__CREDENTIALS" in body
+
+
+def test_alerts_block_present_and_parses(tmp_path: Path) -> None:
+    import yaml
+
+    scaffolder.main(
+        [
+            "has_alerts",
+            "--source",
+            "rest_api",
+            "--dest",
+            "duckdb",
+            "--pipelines-root",
+            str(tmp_path),
+        ]
+    )
+    parsed = yaml.safe_load((tmp_path / "has_alerts.yml").read_text())
+    assert parsed["alerts"]["severity"] == "P2"
+    assert parsed["alerts"]["dedup_window_minutes"] == 15
+    assert parsed["alerts"]["on_schema_change"] is True
+
+
+def test_required_source_keys_emitted_as_yaml_values(tmp_path: Path) -> None:
+    import yaml
+
+    scaffolder.main(
+        [
+            "yaml_values",
+            "--source",
+            "sql_database",
+            "--dest",
+            "duckdb",
+            "--pipelines-root",
+            str(tmp_path),
+        ]
+    )
+    parsed = yaml.safe_load((tmp_path / "yaml_values.yml").read_text())
+    assert parsed["source"]["config"]["tables"] == []
+
+
+def test_source_env_var_hint_present_for_sql_database(tmp_path: Path) -> None:
+    scaffolder.main(
+        [
+            "with_src_env",
+            "--source",
+            "sql_database",
+            "--dest",
+            "duckdb",
+            "--pipelines-root",
+            str(tmp_path),
+        ]
+    )
+    body = (tmp_path / "with_src_env.yml").read_text()
+    assert "SOURCES__SQL_DATABASE__SQL_DATABASE_CONN__CREDENTIALS" in body

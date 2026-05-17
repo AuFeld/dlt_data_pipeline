@@ -6,6 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from data_pipeline_template.config.models import (
+    AlertsConfig,
+    AlertSeverity,
     OptionsConfig,
     PipelineConfig,
     SchemaContract,
@@ -178,3 +180,52 @@ def test_defaults_when_options_omitted() -> None:
         schema_contract=SchemaContract.evolve,
     )
     assert cfg.schedule.enabled is True
+
+
+def test_alerts_defaults() -> None:
+    cfg = PipelineConfig.model_validate(_base())
+    assert cfg.alerts.severity is AlertSeverity.P2
+    assert cfg.alerts.dedup_window_minutes == 15
+    assert cfg.alerts.slack_channel is None
+    assert cfg.alerts.email_recipients == []
+    assert cfg.alerts.on_schema_change is True
+    assert cfg.alerts.on_sla_miss is True
+
+
+def test_pipeline_without_alerts_block_still_valid() -> None:
+    raw = _base()
+    raw.pop("alerts", None)
+    cfg = PipelineConfig.model_validate(raw)
+    assert cfg.alerts == AlertsConfig()
+
+
+@pytest.mark.parametrize("bad", [-1, 1441, 100000])
+def test_alerts_dedup_bounds(bad: int) -> None:
+    with pytest.raises(ValidationError, match="dedup_window_minutes"):
+        PipelineConfig.model_validate(_base(alerts={"dedup_window_minutes": bad}))
+
+
+def test_alerts_invalid_severity_rejected() -> None:
+    with pytest.raises(ValidationError):
+        PipelineConfig.model_validate(_base(alerts={"severity": "P0"}))
+
+
+def test_alerts_accepts_overrides() -> None:
+    cfg = PipelineConfig.model_validate(
+        _base(
+            alerts={
+                "severity": "P1",
+                "dedup_window_minutes": 60,
+                "slack_channel": "#oncall-data",
+                "email_recipients": ["data@example.com"],
+                "on_schema_change": False,
+                "on_sla_miss": False,
+            }
+        )
+    )
+    assert cfg.alerts.severity is AlertSeverity.P1
+    assert cfg.alerts.dedup_window_minutes == 60
+    assert cfg.alerts.slack_channel == "#oncall-data"
+    assert cfg.alerts.email_recipients == ["data@example.com"]
+    assert cfg.alerts.on_schema_change is False
+    assert cfg.alerts.on_sla_miss is False

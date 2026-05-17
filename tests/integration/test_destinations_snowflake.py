@@ -17,10 +17,13 @@ import yaml
 
 from data_pipeline_template import pipeline_factory
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("SNOWFLAKE_TEST_ACCOUNT"),
-    reason="Snowflake creds absent; set SNOWFLAKE_TEST_ACCOUNT (+ companion env vars) to run",
-)
+pytestmark = [
+    pytest.mark.snowflake,
+    pytest.mark.skipif(
+        not os.environ.get("SNOWFLAKE_TEST_ACCOUNT"),
+        reason="Snowflake creds absent; set SNOWFLAKE_TEST_ACCOUNT (+ companion env vars) to run",
+    ),
+]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

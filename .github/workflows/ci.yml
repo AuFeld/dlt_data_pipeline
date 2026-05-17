@@ -1,0 +1,121 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  AIRFLOW_VERSION: "2.10.3"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-uv-airflow
+        with:
+          airflow-version: "2.10.3"
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - run: uv run pre-commit run regen-pipeline-schema --all-files
+
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-uv-airflow
+        with:
+          airflow-version: "2.10.3"
+      - run: uv run pytest tests/unit
+
+  integration-duckdb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-uv-airflow
+        with:
+          airflow-version: "2.10.3"
+      - run: uv run pytest tests/integration -m "not postgres and not cdc and not snowflake"
+
+  integration-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres-source:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: source
+          POSTGRES_PASSWORD: source
+          POSTGRES_DB: source_db
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U source"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      postgres-destination:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: warehouse
+          POSTGRES_PASSWORD: warehouse
+          POSTGRES_DB: warehouse_db
+        ports: ["5434:5432"]
+        options: >-
+          --health-cmd "pg_isready -U warehouse"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      SOURCES__SQL_DATABASE__PG_SOURCE__CREDENTIALS: postgresql://source:source@localhost:5433/source_db
+      DESTINATION__POSTGRES__PG_WAREHOUSE__CREDENTIALS: postgresql://warehouse:warehouse@localhost:5434/warehouse_db
+      RUN_LIVE_PG: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-uv-airflow
+        with:
+          airflow-version: "2.10.3"
+      - name: non-cdc postgres integration tests
+        run: uv run pytest tests/integration -m "postgres and not cdc"
+
+      # CDC needs wal_level=logical, which GHA services: cannot configure.
+      # Bring up the compose postgres-source for the CDC subset only.
+      - name: docker compose postgres-source (CDC)
+        run: |
+          docker compose -f docker/docker-compose.yml up -d postgres-source
+          for i in {1..30}; do
+            if docker compose -f docker/docker-compose.yml exec -T postgres-source \
+              pg_isready -U source >/dev/null 2>&1; then
+              echo "postgres-source ready"; break
+            fi
+            sleep 2
+          done
+      - name: cdc integration tests
+        env:
+          SOURCES__PG_CDC__PG_SOURCE__CREDENTIALS: postgresql://source:source@localhost:5433/source_db
+          DESTINATION__PG_WAREHOUSE__CREDENTIALS: postgresql://warehouse:warehouse@localhost:5434/warehouse_db
+          RUN_LIVE_PG_CDC: "1"
+        run: uv run pytest tests/integration -m cdc
+
+  integration-snowflake:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.SNOWFLAKE_TEST_ACCOUNT != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-uv-airflow
+        with:
+          airflow-version: "2.10.3"
+          extras: "snowflake"
+      - run: uv run pytest tests/integration -m snowflake
+        env:
+          SNOWFLAKE_TEST_ACCOUNT: ${{ secrets.SNOWFLAKE_TEST_ACCOUNT }}
+          SNOWFLAKE_TEST_USER: ${{ secrets.SNOWFLAKE_TEST_USER }}
+          SNOWFLAKE_TEST_PASSWORD: ${{ secrets.SNOWFLAKE_TEST_PASSWORD }}
+          SNOWFLAKE_TEST_DATABASE: ${{ secrets.SNOWFLAKE_TEST_DATABASE }}
+          SNOWFLAKE_TEST_WAREHOUSE: ${{ secrets.SNOWFLAKE_TEST_WAREHOUSE }}
+          SNOWFLAKE_TEST_ROLE: ${{ secrets.SNOWFLAKE_TEST_ROLE }}
