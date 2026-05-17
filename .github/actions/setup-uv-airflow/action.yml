@@ -42,10 +42,16 @@ runs:
         set -euo pipefail
         CONSTRAINTS_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-3.12.txt"
         uv venv
+        # Two-step install: Airflow + runtime deps under the constraints file
+        # (Airflow refuses unpinned resolution); dev tools + optional extras
+        # without constraints, because Airflow's constraints pin dev tools to
+        # older versions (e.g. mypy==1.9.0) that conflict with our [dev]
+        # extra's minimums (mypy>=1.11, ruff>=0.6, pytest>=8).
+        uv pip install -e . \
+          "apache-airflow==${AIRFLOW_VERSION}" \
+          --constraint "${CONSTRAINTS_URL}"
         EXTRA_SPEC="[dev]"
         if [ -n "${EXTRAS}" ]; then
           EXTRA_SPEC="[dev,${EXTRAS}]"
         fi
-        uv pip install -e ".${EXTRA_SPEC}" \
-          "apache-airflow==${AIRFLOW_VERSION}" \
-          --constraint "${CONSTRAINTS_URL}"
+        uv pip install -e ".${EXTRA_SPEC}"
