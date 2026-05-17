@@ -1,0 +1,51 @@
+name: setup-uv-airflow
+description: >-
+  Install Python 3.12, uv, and apache-airflow under Airflow's matching
+  constraints file (uv sync does not honor --constraint, so we use
+  `uv pip install` instead). Caches both uv and pip caches keyed on
+  pyproject.toml + uv.lock.
+
+inputs:
+  airflow-version:
+    description: Apache Airflow version to install
+    required: false
+    default: "2.10.3"
+  extras:
+    description: Optional extras to install (comma-separated, e.g. "snowflake")
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - uses: astral-sh/setup-uv@v3
+      with:
+        enable-cache: true
+        cache-dependency-glob: "pyproject.toml"
+
+    - name: cache pip
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+
+    - name: install with airflow constraints
+      shell: bash
+      env:
+        AIRFLOW_VERSION: ${{ inputs.airflow-version }}
+        EXTRAS: ${{ inputs.extras }}
+      run: |
+        set -euo pipefail
+        CONSTRAINTS_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-3.12.txt"
+        uv venv
+        EXTRA_SPEC="[dev]"
+        if [ -n "${EXTRAS}" ]; then
+          EXTRA_SPEC="[dev,${EXTRAS}]"
+        fi
+        uv pip install -e ".${EXTRA_SPEC}" \
+          "apache-airflow==${AIRFLOW_VERSION}" \
+          --constraint "${CONSTRAINTS_URL}"

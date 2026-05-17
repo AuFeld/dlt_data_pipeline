@@ -121,6 +121,28 @@ class ResourcesConfig(_StrictModel):
     memory: str | None = None
 
 
+class AlertSeverity(StrEnum):
+    P1 = "P1"
+    P2 = "P2"
+    info = "info"
+
+
+class AlertsConfig(_StrictModel):
+    """Per-pipeline alert routing knobs.
+
+    Webhook URL, default channels per severity, and SMTP credentials are
+    deployment concerns and live in env vars (see ``observability.alerts``
+    module docstring). YAML carries only per-pipeline overrides.
+    """
+
+    severity: AlertSeverity = AlertSeverity.P2
+    dedup_window_minutes: int = Field(default=15, ge=0, le=1440)
+    slack_channel: str | None = None
+    email_recipients: list[str] = Field(default_factory=list)
+    on_schema_change: bool = True
+    on_sla_miss: bool = True
+
+
 class PipelineConfig(_StrictModel):
     name: str
     source: SourceConfig
@@ -129,6 +151,7 @@ class PipelineConfig(_StrictModel):
     schedule: ScheduleConfig
     options: OptionsConfig = Field(default_factory=OptionsConfig)
     resources: ResourcesConfig = Field(default_factory=ResourcesConfig)
+    alerts: AlertsConfig = Field(default_factory=AlertsConfig)
 
     @field_validator("name")
     @classmethod

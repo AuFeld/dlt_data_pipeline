@@ -140,6 +140,7 @@ def test_full_refresh_then_incremental_then_cursor_persists(
     assert rows_after_3 == rows_after_2
 
 
+@pytest.mark.postgres
 @pytest.mark.skipif(
     os.getenv("RUN_LIVE_PG") != "1",
     reason="set RUN_LIVE_PG=1 and provide SOURCES__SQL_DATABASE__PG_SOURCE__CREDENTIALS "

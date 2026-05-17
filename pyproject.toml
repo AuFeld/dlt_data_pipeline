@@ -89,3 +89,8 @@ packages = ["data_pipeline_template"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -q"
+markers = [
+  "postgres: requires a live Postgres (GHA `services:` postgres or compose)",
+  "cdc: requires wal_level=logical (docker compose only — GHA services cannot set it)",
+  "snowflake: requires Snowflake credentials in env",
+]

@@ -40,13 +40,17 @@ LIVE_YAML = REPO_ROOT / "pipelines" / "example_pg_cdc_to_pg.yml"
 SOURCE_ENV = "SOURCES__PG_CDC__PG_SOURCE__CREDENTIALS"
 DEST_ENV = "DESTINATION__PG_WAREHOUSE__CREDENTIALS"
 
-pytestmark = pytest.mark.skipif(
-    os.getenv("RUN_LIVE_PG_CDC") != "1",
-    reason=(
-        "set RUN_LIVE_PG_CDC=1 and bring up docker/docker-compose.yml "
-        f"(needs {SOURCE_ENV} and {DEST_ENV})"
+pytestmark = [
+    pytest.mark.cdc,
+    pytest.mark.postgres,
+    pytest.mark.skipif(
+        os.getenv("RUN_LIVE_PG_CDC") != "1",
+        reason=(
+            "set RUN_LIVE_PG_CDC=1 and bring up docker/docker-compose.yml "
+            f"(needs {SOURCE_ENV} and {DEST_ENV})"
+        ),
     ),
-)
+]
 
 
 def _connect_source() -> psycopg2.extensions.connection:

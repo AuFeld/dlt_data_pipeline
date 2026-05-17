@@ -13,6 +13,7 @@ from typing import Any
 
 import dlt
 import pytest
+from airflow.datasets import Dataset
 
 from data_pipeline_template.airflow.dag_factory import build_dag
 from data_pipeline_template.config.loader import load_pipelines
@@ -141,3 +142,42 @@ def test_build_dag_pg_cdc(configs: dict, monkeypatch: pytest.MonkeyPatch) -> Non
     tasks = _tasks_for(dag)
     assert tasks, "pg_cdc DAG must have at least the streaming task"
     assert all(t.task_id.startswith(f"{cfg.name}.") for t in tasks)
+
+
+def test_build_dag_has_failure_and_sla_callbacks(configs: dict) -> None:
+    dag = build_dag(configs["basic_rest"])
+    assert dag.on_failure_callback is not None
+    assert dag.sla_miss_callback is not None
+
+
+def test_build_dag_emits_dataset_outlet(configs: dict) -> None:
+    cfg = configs["basic_rest"]
+    dag = build_dag(cfg)
+    emit = next(t for t in dag.tasks if t.task_id.endswith(".emit_dataset"))
+    outlet_uris = {o.uri.rstrip("/") for o in emit.outlets if isinstance(o, Dataset)}
+    assert f"dlt://{cfg.name}" in outlet_uris
+
+
+def test_build_dag_schema_change_probe_present_when_enabled(configs: dict) -> None:
+    cfg = configs["basic_rest"]
+    dag = build_dag(cfg)
+    probe_ids = [t.task_id for t in dag.tasks if t.task_id.endswith(".schema_change_probe")]
+    assert len(probe_ids) == 1
+
+
+def test_build_dag_schema_change_probe_absent_when_disabled(configs: dict) -> None:
+    cfg = configs["basic_rest"].model_copy(deep=True)
+    cfg.alerts.on_schema_change = False
+    dag = build_dag(cfg)
+    probe_ids = [t.task_id for t in dag.tasks if t.task_id.endswith(".schema_change_probe")]
+    assert probe_ids == []
+    # emit_dataset still present
+    assert any(t.task_id.endswith(".emit_dataset") for t in dag.tasks)
+
+
+def test_build_dag_trailing_tasks_inside_taskgroup(configs: dict) -> None:
+    cfg = configs["basic_rest"]
+    dag = build_dag(cfg)
+    for needle in (".emit_dataset", ".schema_change_probe"):
+        match = next(t for t in dag.tasks if t.task_id.endswith(needle))
+        assert match.task_id.startswith(f"{cfg.name}.")
