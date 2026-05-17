@@ -101,6 +101,19 @@ exclude = ["src/dlt_data_pipeline/sources/.*/_vendor/"]
 module = ["kubernetes.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# isodate ships no py.typed marker. Used for ISO-8601 duration parsing in
+# config models + pipeline_factory (Segment 12 backfill / lookback).
+module = ["isodate.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Airflow's constraints file pins sqlalchemy==1.4.x, which predates the
+# py.typed marker. Used in airflow/quality.py for the cross-cluster
+# row-count engine.
+module = ["sqlalchemy.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -q"
