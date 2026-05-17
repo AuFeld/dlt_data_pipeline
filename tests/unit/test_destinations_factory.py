@@ -26,15 +26,18 @@ def test_postgres_returns_dlt_destination() -> None:
     assert dest is not None
 
 
-def test_snowflake_raises_not_implemented() -> None:
-    cfg = DestinationConfig(type=DestinationType.snowflake, connection="sf", dataset="raw")
-    with pytest.raises(NotImplementedError, match="Segment 8"):
-        build_destination(cfg)
+def test_snowflake_returns_dlt_destination() -> None:
+    cfg = DestinationConfig(
+        type=DestinationType.snowflake, connection="snowflake_warehouse", dataset="raw"
+    )
+    dest = build_destination(cfg)
+    assert dest is not None
+    assert dest.destination_name == "snowflake_warehouse"
 
 
-def test_databricks_raises_not_implemented() -> None:
+def test_databricks_raises_deferral_message() -> None:
     cfg = DestinationConfig(type=DestinationType.databricks, connection="dbx", dataset="raw")
-    with pytest.raises(NotImplementedError, match="Segment 8"):
+    with pytest.raises(NotImplementedError, match="not in active use"):
         build_destination(cfg)
 
 

@@ -327,48 +327,68 @@ catches them.
 - **Done when:** source PG configured for logical replication; INSERT/UPDATE/
   DELETE propagate to destination; replication slot persists across restarts.
 
-### Segment 8 — Filesystem/S3 source + Snowflake & Databricks destinations
-- `sources/filesystem/__init__.py` is currently a stub raising
-  `NotImplementedError`. Implement the real builder (local + S3;
-  CSV/Parquet/JSONL) wrapping `dlt.sources.filesystem`. The entry-point
-  registration is **already in place** in `pyproject.toml` (lines 39, 45) —
-  no Segment 1 work to redo.
-- Snowflake + Databricks branches in `destinations/factory.py` (currently
-  raise `NotImplementedError`). Snowflake builder must accept the
-  key-pair-auth path called out in **Tricky Parts** (base64-encoded private
-  key via env var, or mounted key file) — don't defer that to Segment 9.
-  Databricks builder must accept host + http_path + token *and* a separate
-  staging-location credential (S3/ADLS volume).
-- Address the orphan example: `pipelines/example_pg_cdc_to_snowflake.yml` is
-  already committed but currently breaks `pipelines doctor` because the
-  destination stub raises during `build()`. Recommendation: implement
-  Snowflake first so the example becomes runnable. Fallback: rename to
-  `example_disabled_…` and teach the loader to skip files matching that
-  prefix.
-- Add a committed `pipelines/example_filesystem_to_duckdb.yml` exercised by
-  the integration test below.
+### Segment 8 — Filesystem source + Snowflake destination (Databricks deferred)
+**Scope clarification:** Snowflake is the active write target. Databricks
+is **not** used as a direct destination by this pipeline — current
+architecture loads Snowflake, which fans out to Databricks via Databricks'
+External Data connection. Segment 8 implements Snowflake only; Databricks
+stays stubbed with a documented "not in active use" message and is
+re-evaluated only if a direct dlt → Databricks load becomes a requirement.
+
+- `sources/filesystem/__init__.py` was a stub; now wraps
+  `dlt.sources.filesystem` for local + S3/GCS/Azure reads of
+  CSV/Parquet/JSONL. Metadata in
+  `sources/filesystem/_metadata.py` lists allowed config keys
+  (`bucket_url` required; `file_glob`, `format`, `table_name`,
+  `reader_kwargs`, `files_per_page`, `extract_content`). The entry-point
+  registration was already in place in `pyproject.toml` (lines 39, 45).
+- `destinations/factory.py`: Snowflake branch implemented via dlt's
+  native `snowflake` destination, gated on the optional
+  `dlt[snowflake]` extra (clear `RuntimeError` when missing). Auth
+  surface documented in `destinations/_metadata.py`: password URI for
+  env-var setups; key-pair (base64 PEM via
+  `[destination.snowflake.<connection>.credentials]`) for prod.
+- `destinations/factory.py`: Databricks branch raises `NotImplementedError`
+  with a sharper deferral message describing the Snowflake → Databricks
+  External Data flow. Metadata `notes` mirror the deferral. Enum entry
+  preserved so YAML schema validation still accepts the type.
+- New `destinations/registry.py`: parity with `sources/registry.py`
+  (`list_types`, `describe`). Unblocks the Segment 9 scaffolder upgrade.
+- Resolved the orphan example: `pipelines/example_pg_cdc_to_snowflake.yml`
+  now passes `pipelines doctor` via the real Snowflake builder; its
+  CDC slot + publication renamed to `dlt_orders_snowflake_slot` /
+  `dlt_orders_snowflake_pub` to avoid collision with
+  `example_pg_cdc_to_pg.yml`.
+- New committed example: `pipelines/example_filesystem_to_duckdb.yml`
+  exercised by the integration test.
 - Tests:
   - `tests/integration/test_filesystem_source.py` — hermetic
-    filesystem→duckdb runs; fixture seeds CSV / Parquet / JSONL under
-    `tests/fixtures/files/`. No network. Replaces the previous
-    aspirational claim that this test already exists.
-  - `tests/integration/test_destinations_snowflake.py` and
-    `tests/integration/test_destinations_databricks.py` — gated by
-    `pytest.mark.skipif(not os.environ.get("SNOWFLAKE_<…>"), reason=…)`
-    (mirror for Databricks). When skipped, a paired
-    `tests/unit/test_destinations_factory_config.py` exercises
-    `destinations.factory.build()` for both targets with stub creds and
-    asserts the returned destination's config shape — keeps CI green
-    without real accounts.
+    filesystem→duckdb parametrized across CSV / Parquet / JSONL fixtures
+    under `tests/fixtures/files/`. No network. Plus negative tests
+    (unknown format, unknown config key, remote bucket missing creds).
+  - `tests/integration/test_destinations_snowflake.py` — gated by
+    `pytest.mark.skipif(not os.environ.get("SNOWFLAKE_TEST_ACCOUNT"))`.
+    Runs against a real Snowflake account when creds present; skipped
+    cleanly otherwise. **No Databricks integration test** — deferred
+    with the builder.
+  - `tests/unit/test_destinations_factory.py` — Snowflake assertion
+    inverted from `NotImplementedError` to positive build; Databricks
+    assertion updated to match the new "not in active use" message.
+  - `tests/unit/test_destinations_factory_config.py` — new. Covers the
+    `dlt[snowflake]` extra-missing path (`RuntimeError`), the
+    destinations registry surface (`list_types`, `describe`,
+    `resolve_env_var`), and the Databricks deferral metadata.
 - **Done when:**
   - `pipelines doctor` reports a non-`MISSING` slot for every committed
-    example YAML (including the Snowflake CDC example).
+    example YAML (Snowflake CDC example resolves through real builder).
   - `pytest tests/integration/test_filesystem_source.py` green with no
     external services.
-  - Snowflake key-pair-auth path documented in `destinations/factory.py`
-    and exercised by a unit test.
-  - Snowflake/Databricks integration tests run when creds present, skip
-    cleanly when absent; CI stays green either way.
+  - Snowflake key-pair-auth path documented in
+    `destinations/_metadata.py` and exercised by registry unit test.
+  - Snowflake integration test runs when creds present, skips cleanly
+    when absent; CI stays green either way.
+  - Any pipeline YAML with `destination.type: databricks` fails at
+    `build()` with the new deferral message.
 
 ### Segment 9 — Observability, alerting, scaffolder polish, CI
 - **Scaffolder upgrade** (not greenfield): `scripts/new_pipeline.py` already
@@ -405,8 +425,8 @@ catches them.
   - `integration-duckdb` — hermetic, no creds.
   - `integration-postgres` — composes up `postgres-source` +
     `postgres-destination` services.
-  - `integration-snowflake` — skipped when secrets absent.
-  - `integration-databricks` — skipped when secrets absent.
+  - `integration-snowflake` — skipped when secrets absent. (No
+    Databricks job — destination deferred in Segment 8.)
 
   Airflow install via the matching constraints file per Segment 1.
   Cache `~/.cache/uv` + `~/.cache/pip` keyed on `pyproject.toml`.
@@ -496,7 +516,7 @@ direction too. `README.md` is currently a 21-byte stub.
   adding a new source type to `registry.py`), known issues, troubleshooting.
 - **Fold gaps** — explicit Tricky-Parts → component-README mapping:
   - CDC setup, replication-slot lifecycle → `sources/README.md`.
-  - Snowflake/Databricks creds → `destinations/README.md`.
+  - Snowflake creds (+ Databricks deferral rationale) → `destinations/README.md`.
   - Schema evolution → `pipelines/README.md` + `config/README.md`.
   - State persistence, `max_active_runs`, pool → `airflow/README.md`.
   - Secret leakage, log scrubbing → `observability/README.md` (created
@@ -597,8 +617,10 @@ Promoted from former "Open Considerations → Alert depth".
   example DAG in UI → for incremental, mutate source + re-run, assert only
   deltas → for CDC, snapshot then INSERT/UPDATE/DELETE, confirm propagation →
   restart containers, re-run, confirm state persisted.
-- **Snowflake/Databricks:** gate behind env-var presence (`pytest.mark.skipif`);
-  fall back to config-validation-only tests when creds absent so CI stays green.
+- **Snowflake:** gate behind env-var presence (`pytest.mark.skipif`);
+  fall back to config-validation-only unit tests when creds absent so CI
+  stays green. Databricks destination is deferred (Segment 8 scope note);
+  no integration test until a direct dlt → Databricks pipeline materializes.
 - **Airflow-layer tests:** `dag_factory` must be tested directly — assert a
   YAML produces the expected `DAG` (id, `schedule`, `max_active_runs`) and a
   `PipelineTasksGroup` containing the expected per-resource tasks. Not just
@@ -617,9 +639,10 @@ Promoted from former "Open Considerations → Alert depth".
   change + restart). Replication slot retains WAL until consumed — a paused
   pipeline fills source disk; needs monitoring + cleanup path. Test DELETE
   propagation and snapshot→streaming handoff explicitly.
-- **Snowflake/Databricks creds:** Snowflake key-pair auth is multi-line —
-  base64-encode or mount a key file. Databricks needs host + http_path + token
-  *and* separate staging-location creds (S3/ADLS volume). Keep all out of YAML.
+- **Snowflake creds:** key-pair auth is multi-line — base64-encode or
+  mount a key file via `[destination.snowflake.<connection>.credentials]`.
+  Password URI for env-var setups. Keep all out of YAML. (Databricks
+  deferred — see Segment 8 scope note.)
 - **Schema evolution:** expose dlt `schema_contract` per pipeline. `evolve`
   default is convenient but silently adds columns; recommend `freeze` for
   regulated destinations. Surface schema-change events in DAG-run metadata

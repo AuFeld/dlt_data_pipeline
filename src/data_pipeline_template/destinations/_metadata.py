@@ -41,14 +41,31 @@ METADATA: dict[DestinationType, DestinationTypeMetadata] = {
         ),
     ),
     DestinationType.snowflake: DestinationTypeMetadata(
-        description="Snowflake destination. Lands in Segment 8.",
+        description="Snowflake destination via dlt's native snowflake adapter.",
         env_var_template="DESTINATION__SNOWFLAKE__<CONNECTION>__CREDENTIALS",
-        notes="Key-pair auth: base64-encode the PEM into the URI, or mount via .dlt/secrets.toml.",
+        notes=(
+            "Requires the optional 'snowflake' extra: uv sync --extra snowflake. "
+            "Auth options:\n"
+            "  (1) Password — env var value: "
+            "snowflake://<user>:<password>@<account>/<database>?warehouse=<wh>&role=<role>\n"
+            "  (2) Key-pair — set credentials.private_key (base64-encoded PEM) and "
+            "credentials.private_key_passphrase under "
+            "[destination.snowflake.<connection>.credentials] in .dlt/secrets.toml. "
+            "Account / user / database / warehouse / role go in the same section.\n"
+            "Stage: dlt creates an internal named stage by default — no external "
+            "S3/ADLS staging credentials needed for v1."
+        ),
     ),
     DestinationType.databricks: DestinationTypeMetadata(
-        description="Databricks destination. Lands in Segment 8.",
-        env_var_template="DESTINATION__DATABRICKS__<CONNECTION>__CREDENTIALS",
-        notes="Needs host + http_path + token; separate staging-location creds (S3/ADLS).",
+        description="Databricks destination — NOT in active use.",
+        env_var_template=None,
+        notes=(
+            "Not implemented. Current architecture: dlt loads Snowflake; Databricks "
+            "consumes from Snowflake via its External Data connection. Any pipeline "
+            "with destination.type: databricks will fail at build() with a clear "
+            "deferral message. Open an issue if direct dlt -> Databricks loads "
+            "become a requirement."
+        ),
     ),
 }
 
