@@ -51,50 +51,10 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
-# 4. Apply schema + seed rows (idempotent).
-"${COMPOSE[@]}" exec -T postgres-source psql -U source -d source_db <<'SQL'
-CREATE TABLE IF NOT EXISTS public.orders (
-  id INTEGER PRIMARY KEY,
-  amount NUMERIC(12, 2) NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS public.customers (
-  id INTEGER PRIMARY KEY,
-  name TEXT NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-INSERT INTO public.orders (id, amount, updated_at) VALUES
-  (1, 10.00, '2025-01-01 00:00:00+00'),
-  (2, 20.00, '2025-01-01 00:01:00+00'),
-  (3, 30.00, '2025-01-01 00:02:00+00')
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO public.customers (id, name, updated_at) VALUES
-  (1, 'alice', '2025-01-01 00:00:00+00'),
-  (2, 'bob',   '2025-01-01 00:01:00+00')
-ON CONFLICT (id) DO NOTHING;
-
--- Segment 7: every cdc pipeline owns its own publication via
--- init_replication(). The example_pg_cdc_to_pg pipeline references
--- publication 'dlt_orders_pub' + slot 'dlt_orders_slot' — predeclare the
--- publication idempotently so first-run snapshot creation succeeds even if
--- the `source` role's CREATE privilege has been narrowed. Re-running the
--- seed leaves an existing publication untouched.
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'dlt_orders_pub') THEN
-    CREATE PUBLICATION dlt_orders_pub FOR TABLE public.orders WITH (publish = 'insert, update, delete');
-  END IF;
-END
-$$;
-
--- Required by Postgres logical replication: every replicated table must
--- declare a REPLICA IDENTITY so UPDATE/DELETE rows carry the old PK in
--- the WAL stream. The PK index satisfies the DEFAULT identity, but state
--- it explicitly so the requirement is grep-able when CDC tests fail.
-ALTER TABLE public.orders REPLICA IDENTITY DEFAULT;
-SQL
+# 4. Apply schema + seed rows (idempotent). DDL lives in scripts/seed_source.sql
+#    so CI (.github/workflows/ci.yml integration-postgres job) and local dev
+#    share one source of truth.
+"${COMPOSE[@]}" exec -T postgres-source psql -U source -d source_db < scripts/seed_source.sql
 
 echo "[seed] source DB ready."
 
