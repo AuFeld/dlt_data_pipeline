@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 from dlt.common.configuration import resolve_configuration
 
-from data_pipeline_template.config.models import DestinationConfig, DestinationType
-from data_pipeline_template.destinations.factory import build_destination
+from dlt_data_pipeline.config.models import DestinationConfig, DestinationType
+from dlt_data_pipeline.destinations.factory import build_destination
 
 
 def test_duckdb_returns_dlt_destination(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

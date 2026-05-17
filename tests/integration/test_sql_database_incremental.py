@@ -19,7 +19,7 @@ import duckdb
 import pytest
 import yaml
 
-from data_pipeline_template import pipeline_factory
+from dlt_data_pipeline import pipeline_factory
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LIVE_PG_YAML = REPO_ROOT / "pipelines" / "example_pg_to_pg_incremental.yml"

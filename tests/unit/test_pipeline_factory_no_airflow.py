@@ -24,8 +24,8 @@ class _Blocked:
 
 sys.modules["airflow"] = None  # type: ignore[assignment]
 
-from data_pipeline_template import pipeline_factory  # noqa: F401
-from data_pipeline_template.config.models import (
+from dlt_data_pipeline import pipeline_factory  # noqa: F401
+from dlt_data_pipeline.config.models import (
     DestinationConfig,
     DestinationType,
     OptionsConfig,
@@ -60,8 +60,8 @@ import sys
 
 sys.modules["airflow"] = None  # type: ignore[assignment]
 
-from data_pipeline_template import pipeline_factory  # noqa: F401
-from data_pipeline_template.config.models import (
+from dlt_data_pipeline import pipeline_factory  # noqa: F401
+from dlt_data_pipeline.config.models import (
     DestinationConfig,
     DestinationType,
     OptionsConfig,
@@ -142,7 +142,7 @@ sys.modules["airflow"] = None  # type: ignore[assignment]
 # tests/integration/test_pg_cdc.py.
 import dlt
 
-from data_pipeline_template.sources import pg_cdc as _pg_cdc
+from dlt_data_pipeline.sources import pg_cdc as _pg_cdc
 
 def _fake_init(**_kw):
     return None
@@ -156,8 +156,8 @@ def _fake_resource(**kw):
 _pg_cdc.init_replication = _fake_init
 _pg_cdc.replication_resource = _fake_resource
 
-from data_pipeline_template import pipeline_factory  # noqa: F401,E402
-from data_pipeline_template.config.models import (  # noqa: E402
+from dlt_data_pipeline import pipeline_factory  # noqa: F401,E402
+from dlt_data_pipeline.config.models import (  # noqa: E402
     DestinationConfig,
     DestinationType,
     OptionsConfig,

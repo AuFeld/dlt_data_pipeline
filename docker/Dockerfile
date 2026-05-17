@@ -2,7 +2,7 @@
 #   - docker-compose airflow-{webserver,scheduler,triggerer,init} services
 #     (target: dev — default, includes pytest + responses for live-PG tests)
 #   - one-shot CLI runs (`docker compose run --rm airflow-scheduler python -m
-#     data_pipeline_template run <name>`)
+#     dlt_data_pipeline run <name>`)
 #   - per-task pods under KubernetesExecutor (Segment 10)
 #     (target: prod — `uv sync --frozen --no-dev` slims the runtime venv)
 # Same artifact for every role; the compose service (or pod spec) supplies its

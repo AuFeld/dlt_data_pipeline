@@ -32,7 +32,7 @@ from pathlib import Path
 import psycopg2
 import pytest
 
-from data_pipeline_template import pipeline_factory
+from dlt_data_pipeline import pipeline_factory
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LIVE_YAML = REPO_ROOT / "pipelines" / "example_pg_cdc_to_pg.yml"

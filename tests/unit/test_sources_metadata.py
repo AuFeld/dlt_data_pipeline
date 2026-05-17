@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from data_pipeline_template.sources import registry
-from data_pipeline_template.sources._metadata import SourceTypeMetadata
+from dlt_data_pipeline.sources import registry
+from dlt_data_pipeline.sources._metadata import SourceTypeMetadata
 
 
 def test_every_builder_has_metadata() -> None:

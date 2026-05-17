@@ -1,24 +1,24 @@
 import importlib.resources
 
-import data_pipeline_template
+import dlt_data_pipeline
 
 
 def test_package_importable() -> None:
-    assert data_pipeline_template.__version__
+    assert dlt_data_pipeline.__version__
 
 
 def test_subpackages_importable() -> None:
     for sub in (
-        "data_pipeline_template.sources",
-        "data_pipeline_template.sources.rest_api",
-        "data_pipeline_template.sources.sql_database",
-        "data_pipeline_template.sources.filesystem",
-        "data_pipeline_template.sources.pg_cdc",
-        "data_pipeline_template.airflow",
+        "dlt_data_pipeline.sources",
+        "dlt_data_pipeline.sources.rest_api",
+        "dlt_data_pipeline.sources.sql_database",
+        "dlt_data_pipeline.sources.filesystem",
+        "dlt_data_pipeline.sources.pg_cdc",
+        "dlt_data_pipeline.airflow",
     ):
         __import__(sub)
 
 
 def test_py_typed_present() -> None:
-    files = importlib.resources.files("data_pipeline_template")
+    files = importlib.resources.files("dlt_data_pipeline")
     assert (files / "py.typed").is_file()

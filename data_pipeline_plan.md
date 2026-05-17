@@ -29,12 +29,12 @@ Design principles:
    edits. New source *types* are the only code extension point.
 2. **Orchestrator boundary is load-bearing.** `pipeline_factory.py` and
    everything under `sources/`, `destinations/`, `config/` must remain
-   **Airflow-agnostic** — no `import airflow` outside `src/data_pipeline_template/airflow/`.
+   **Airflow-agnostic** — no `import airflow` outside `src/dlt_data_pipeline/airflow/`.
    The factory takes a `PipelineConfig` and returns a runnable `dlt.pipeline`;
    the Airflow layer wraps it. This keeps dlt core usable standalone (CLI runs,
    tests, future orchestrator swap) and lets us swap Airflow without rewriting
    the pipeline core. Enforce via:
-   - Layout: Airflow code isolated to `src/data_pipeline_template/airflow/`.
+   - Layout: Airflow code isolated to `src/dlt_data_pipeline/airflow/`.
    - Lint rule: a `ruff` `tidy-imports`/`flake8-tidy-imports` ban on `airflow*`
      imports anywhere outside that subpackage (or a small custom test that
      greps the source tree and fails CI on violations).
@@ -43,16 +43,16 @@ Design principles:
 3. **Source types are plugins (Python entry points), not hardcoded.**
    `sources/registry.py` does **not** maintain a hardcoded `{name -> builder}`
    dict. Instead it discovers source types via the
-   `data_pipeline_template.sources` entry-point group at startup. Each source
-   type is its own subpackage under `src/data_pipeline_template/sources/<name>/`
+   `dlt_data_pipeline.sources` entry-point group at startup. Each source
+   type is its own subpackage under `src/dlt_data_pipeline/sources/<name>/`
    (or, later, a separate installable package) that exposes a `builder(config)
    -> dlt.Source` and registers itself via `pyproject.toml`:
    ```toml
-   [project.entry-points."data_pipeline_template.sources"]
-   rest_api = "data_pipeline_template.sources.rest_api:builder"
-   sql_database = "data_pipeline_template.sources.sql_database:builder"
-   filesystem = "data_pipeline_template.sources.filesystem:builder"
-   pg_cdc = "data_pipeline_template.sources.pg_cdc:builder"
+   [project.entry-points."dlt_data_pipeline.sources"]
+   rest_api = "dlt_data_pipeline.sources.rest_api:builder"
+   sql_database = "dlt_data_pipeline.sources.sql_database:builder"
+   filesystem = "dlt_data_pipeline.sources.filesystem:builder"
+   pg_cdc = "dlt_data_pipeline.sources.pg_cdc:builder"
    ```
    Why: lets the data team add / deprecate / version source types without
    editing a shared registry file (no merge-conflict bottleneck), supports
@@ -812,14 +812,14 @@ Nothing currently sits here unscoped. New "decide during build" notes
 should be added here as they arise.
 
 ## Critical Files
-- `src/data_pipeline_template/config/models.py` — YAML schema contract;
+- `src/dlt_data_pipeline/config/models.py` — YAML schema contract;
   everything depends on it.
-- `src/data_pipeline_template/pipeline_factory.py` — core config → dlt pipeline.
+- `src/dlt_data_pipeline/pipeline_factory.py` — core config → dlt pipeline.
   **Must not import `airflow`** (orchestrator-agnostic boundary; see Design
   principle #2).
-- `src/data_pipeline_template/airflow/dag_factory.py` — YAML → Airflow DAG with
+- `src/dlt_data_pipeline/airflow/dag_factory.py` — YAML → Airflow DAG with
   `PipelineTasksGroup`.
-- `src/data_pipeline_template/sources/registry.py` — extension point for new
+- `src/dlt_data_pipeline/sources/registry.py` — extension point for new
   source types.
 - `dags/data_pipeline_dags.py` — DagBag entry-point; assigns generated DAGs
   into module `globals()`.

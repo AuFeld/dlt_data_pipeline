@@ -13,9 +13,9 @@ import argparse
 import sys
 from pathlib import Path
 
-from data_pipeline_template.cli.pipelines_cmds import validate_pipelines
-from data_pipeline_template.destinations import registry as dest_registry
-from data_pipeline_template.sources import registry as src_registry
+from dlt_data_pipeline.cli.pipelines_cmds import validate_pipelines
+from dlt_data_pipeline.destinations import registry as dest_registry
+from dlt_data_pipeline.sources import registry as src_registry
 
 _HEADER = "# yaml-language-server: $schema=./_schema.json\n"
 
@@ -136,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"Wrote {out}.\n"
         f"Next: fill TODOs, then run "
-        f"`python -m data_pipeline_template pipelines validate {args.name}`."
+        f"`python -m dlt_data_pipeline pipelines validate {args.name}`."
     )
     return 0
 

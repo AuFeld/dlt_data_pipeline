@@ -16,9 +16,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from data_pipeline_template.airflow.dag_factory import build_dag
-from data_pipeline_template.config.loader import load_pipelines
-from data_pipeline_template.observability import alerts as alerts_mod
+from dlt_data_pipeline.airflow.dag_factory import build_dag
+from dlt_data_pipeline.config.loader import load_pipelines
+from dlt_data_pipeline.observability import alerts as alerts_mod
 
 PIPELINES_ROOT = Path(__file__).resolve().parents[2] / "pipelines"
 

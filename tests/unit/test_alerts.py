@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from data_pipeline_template.config.models import AlertsConfig, AlertSeverity
-from data_pipeline_template.observability import alerts as alerts_mod
+from dlt_data_pipeline.config.models import AlertsConfig, AlertSeverity
+from dlt_data_pipeline.observability import alerts as alerts_mod
 
 
 @pytest.fixture(autouse=True)
