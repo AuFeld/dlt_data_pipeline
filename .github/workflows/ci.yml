@@ -74,11 +74,6 @@ jobs:
           --health-retries 10
     env:
       SOURCES__SQL_DATABASE__PG_SOURCE__CREDENTIALS: postgresql://source:source@localhost:5433/source_db
-      # NOTE: destination env-var has NO type segment — dlt resolves under
-      # `destination.<connection>.credentials` because factory.py constructs
-      # the destination with `destination_name=connection`. AGENTS.md +
-      # destinations metadata still advertise the wrong (type-prefixed) form;
-      # see Segment 12 follow-up task. .env.example:35 has the working form.
       DESTINATION__PG_WAREHOUSE__CREDENTIALS: postgresql://warehouse:warehouse@localhost:5434/warehouse_db
       RUN_LIVE_PG: "1"
     steps:

@@ -83,7 +83,7 @@ def _stage_pipeline(tmp_path: Path, dataset: str) -> Path:
 def test_snowflake_smoke_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     dataset = f"dlt_test_{uuid.uuid4().hex[:8]}"
     monkeypatch.setenv(
-        "DESTINATION__SNOWFLAKE__SNOWFLAKE_TEST__CREDENTIALS",
+        "DESTINATION__SNOWFLAKE_TEST__CREDENTIALS",
         _build_creds_uri(),
     )
     pipelines_dir = _stage_pipeline(tmp_path, dataset)
