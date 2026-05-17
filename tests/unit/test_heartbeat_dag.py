@@ -36,9 +36,12 @@ def test_dagbag_parses_heartbeat_dag() -> None:
 
 
 def test_heartbeat_dag_shape() -> None:
+    # ``bag.dags`` is the in-memory DagBag cache populated by file parsing.
+    # ``bag.get_dag`` falls through to a metadata-DB lookup, which fails in
+    # CI where Airflow's SQLite DB is unmigrated.
     bag = DagBag(dag_folder=str(DAGS_DIR), include_examples=False)
-    dag = bag.get_dag("heartbeat_check")
-    assert dag is not None
+    assert "heartbeat_check" in bag.dags
+    dag = bag.dags["heartbeat_check"]
     assert dag.schedule_interval == "*/5 * * * *"
     assert dag.max_active_runs == 1
     assert dag.catchup is False
