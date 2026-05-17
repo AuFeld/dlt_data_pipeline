@@ -754,14 +754,31 @@ direction too. `README.md` is currently a 21-byte stub.
   change + restart). Replication slot retains WAL until consumed — a paused
   pipeline fills source disk; needs monitoring + cleanup path. Test DELETE
   propagation and snapshot→streaming handoff explicitly.
-- **Snowflake creds:** key-pair auth is multi-line — base64-encode or
-  mount a key file via `[destination.snowflake.<connection>.credentials]`.
-  Password URI for env-var setups. Keep all out of YAML. (Databricks
+- **Snowflake creds:** key-pair auth is multi-line — base64-encode the PEM
+  and set `credentials.private_key` (plus `credentials.private_key_passphrase`
+  if encrypted) under `[destination.<connection>.credentials]` in
+  `.dlt/secrets.toml`. Account / user / database / warehouse / role go in
+  the same TOML section. Password URI for env-var setups —
+  `DESTINATION__<CONNECTION>__CREDENTIALS=snowflake://user:pw@account/db?warehouse=wh&role=role`.
+  Keep all out of YAML. Segment 10.5 dropped the type segment from the
+  destination resolver path, so the legacy
+  `[destination.snowflake.<connection>.credentials]` key no longer
+  resolves — use `[destination.<connection>.credentials]`. (Databricks
   deferred — see Segment 8 scope note.)
 - **Schema evolution:** expose dlt `schema_contract` per pipeline. `evolve`
   default is convenient but silently adds columns; recommend `freeze` for
   regulated destinations. Surface schema-change events in DAG-run metadata
   via `XCom` or task logs.
+- **Incremental edge cases:** cursor-based incremental loses rows when the
+  source writes `updated_at` slightly before commit or under timezone skew
+  between source and Airflow worker. `sync.tolerance_seconds` (dlt
+  `Incremental.lag`) and `sync.lookback` (ISO-8601 duration; composes with
+  tolerance) re-read a trailing window each run to catch late arrivals.
+  Defaults are zero — explicit opt-in per pipeline. Cursor gaps after a
+  failed-and-retried run are absorbed by the same lookback window; without
+  it, deletes-after-cursor and out-of-order inserts go missing. Segment 12
+  owns the implementation contract; see `config/models.py:123-124` and the
+  AGENTS.md "Backfill an incremental pipeline" section.
 - **State persistence across containers:** dlt stores incremental cursors +
   schema in the *destination* dataset (`_dlt_*` tables) — durable, survives
   restarts. Put local `~/.dlt` working dir on a named volume too. Point
@@ -795,9 +812,10 @@ direction too. `README.md` is currently a 21-byte stub.
 
 > The following items moved out of Tricky Parts (gap) and into scoped
 > segments: backfill / initial load → **Segment 12**; pipeline lifecycle
-> / orphan cleanup → **Segment 12**; incremental edge cases → **Segment
-> 12**; data-quality checks → **Segment 12**. Search the segment text
-> for the implementation contract.
+> / orphan cleanup → **Segment 12**; data-quality checks → **Segment 12**.
+> Search the segment text for the implementation contract. (Incremental
+> edge cases were re-added above as a conceptual hazard; Segment 12 still
+> owns the implementation.)
 
 ## Open Considerations (not scoped — decide during build)
 

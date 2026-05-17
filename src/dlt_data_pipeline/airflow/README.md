@@ -49,3 +49,44 @@ routes to `observability.alerts.post_sla_miss_alert`.
 Tracking: bump when the project pins Airflow 3.x in `pyproject.toml`. The
 plan's Segment 10 KubernetesExecutor work calls out the same `Dataset →
 sdk.Dataset` module move; SLA migration lands alongside.
+
+## Scheduler heartbeat DAG (Segment 14)
+
+Lives at [`dags/heartbeat_check.py`](../../../dags/heartbeat_check.py) —
+outside the YAML-generated DagBag entry because it monitors Airflow itself,
+not a user pipeline.
+
+- Runs every 5 minutes (`schedule="*/5 * * * *"`, `max_active_runs=1`).
+- Queries `airflow.jobs.job.Job` for the most recent `SchedulerJob` row;
+  fires a P1 alert via `observability.alerts.post_heartbeat_alert` when
+  `latest_heartbeat` is older than 60s (= 2× Airflow's default
+  `scheduler_health_check_threshold` — encodes "two consecutive misses"
+  without a separate counter).
+- Dedup window: 30min, so a multi-hour outage produces ~2 alerts/hr while
+  the 5-min schedule still catches recovery promptly.
+- No cross-run state — the `Job.latest_heartbeat` column is the source of
+  truth. Lazy-imports Airflow internals inside the task callable so a
+  broken install fails this DAG only, not every YAML-generated DAG.
+
+## Known issues / troubleshooting
+
+> **State persistence across containers:** dlt stores incremental cursors +
+> schema in the *destination* dataset (`_dlt_*` tables) — durable, survives
+> restarts. Put local `~/.dlt` working dir on a named volume too. Point
+> Airflow's metadata DB at the persistent `postgres-airflow` service (not the
+> default SQLite). Prevent overlapping runs of the same pipeline (cursor
+> corruption) via `max_active_runs=1` on the generated `DAG`, plus a
+> per-pipeline `pool` if a single pipeline can fan out into concurrent task
+> instances.
+
+> **Monitoring:** Airflow gives run-level observability via task instance
+> state + DAG run state. Add `on_failure_callback` and freshness via
+> `Dataset`/`DatasetEvent` (catch silently-not-running schedules). Surface
+> dlt load metrics into XCom for the UI. (CDC slot-lag monitoring — the
+> other half of this Tricky Part — lives in
+> [`sources/README.md`](../sources/README.md).)
+
+> **dlt Airflow helper caveats:** `PipelineTasksGroup` runs each dlt resource
+> in a separate Airflow task; ensure `pipeline_factory` returns a
+> `dlt.Pipeline` whose `source()` exposes resources discoverable by the
+> helper. Document this contract in `pipeline_factory.py`.
