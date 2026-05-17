@@ -495,73 +495,81 @@ wiring landed in Segment 4 (`config/models.py:112`,
   - Webserver-deployment rolling restart during an in-flight run does
     NOT abort the run.
 
-### Segment 11 — Documentation + package rename
-**README ↔ AGENTS split:** `README.md` is the **human onboarding doc**;
-`AGENTS.md` is the **agent brief** (and `CLAUDE.md` symlinks to it from
-Segment 6.6). Don't duplicate — README links to AGENTS.md for the env-var
-convention, dry-run flow, CDC ops, MCP server, etc. Cross-link the other
-direction too. `README.md` is currently a 21-byte stub.
+### Segment 10.5 — Destination env-var convention fix
+Bug: destinations metadata advertises
+`DESTINATION__<TYPE>__<CONNECTION>__CREDENTIALS`
+(see `src/data_pipeline_template/destinations/_metadata.py:37,45` and
+`AGENTS.md:44-45`), but `destinations/factory.py` constructs each
+destination with `destination_name=connection`, so dlt's actual lookup
+path is `DESTINATION__<CONNECTION>__CREDENTIALS__*` — no type segment.
+`.env.example:35` already uses the working form
+(`DESTINATION__PG_WAREHOUSE__CREDENTIALS=...`).
+`tests/unit/test_destinations_factory.py:44-65` already documents +
+locks the working behavior, so the metadata is the bug. Ship as its
+own small segment ahead of the rename so the corrected strings land
+once and get swept by the rename in Segment 11.
 
-- **Rewrite root `README.md`:** project purpose; architecture diagram
-  (ASCII or mermaid); quickstart (`docker compose up` + `seed_local.sh`);
-  the 10-min "add a pipeline" workflow (lift from this plan, cross-link
-  to the scaffolder); link table to per-component READMEs; cross-link to
-  `AGENTS.md` for the agent / introspection workflow.
-- **Per-component `README.md`** in each major dir — `config/`, `sources/`,
-  `destinations/`, `airflow/`, `observability/` (created in Segment 9 —
-  README lands once Segment 9 ships), `docker/`, `pipelines/`, `tests/`,
-  `cli/` (shipped in Segment 6.5 but undocumented at component level),
-  plus a top-level docstring for `mcp_server.py` (shipped in 6.6).
-  Each covers: what the component does, how to use / extend it (e.g.
-  adding a new source type to `registry.py`), known issues, troubleshooting.
-- **Fold gaps** — explicit Tricky-Parts → component-README mapping:
-  - CDC setup, replication-slot lifecycle → `sources/README.md`.
-  - Snowflake creds (+ Databricks deferral rationale) → `destinations/README.md`.
-  - Schema evolution → `pipelines/README.md` + `config/README.md`.
-  - State persistence, `max_active_runs`, pool → `airflow/README.md`.
-  - Secret leakage, log scrubbing → `observability/README.md` (created
-    in Segment 9).
-  - Backfill, pipeline lifecycle, incremental edge cases, PII →
-    cross-link to Segment 12 (where these items are now scoped).
-- **Package rename `data_pipeline_template` → `dlt_data_pipeline`** (deferred
-  from Segment 10 — the GHCR image naming question surfaced the mismatch
-  between the python package name and the repo / GHCR image name). The
-  rename aligns all three: distribution name `dlt-data-pipeline` (PyPI
-  convention, hyphenated), import path `dlt_data_pipeline` (Python
-  identifier rule, matches the repo directory), GHCR image
-  `ghcr.io/<owner>/dlt-data-pipeline` (shipped in Segment 10).
-  Mechanical scope at the time of this entry: **64 files / 189
-  occurrences** (grep `data_pipeline_template`), plus a directory move.
-  Land as a single dedicated commit at the start of the Segment 11 work
-  so the docs rewrite below uses the final names.
-  Files to touch:
-  - **Directory move:** `src/data_pipeline_template/` →
-    `src/dlt_data_pipeline/`.
-  - **`pyproject.toml`:** `name`, `[tool.hatch.build.targets.wheel]
-    packages`, `[tool.mypy] packages`, the two entry-point GROUP names
-    (`data_pipeline_template.sources` and
-    `data_pipeline_template.sources.metadata`), and each entry-point
-    target path. Note: renaming the group breaks any out-of-tree source
-    plugins; none exist yet — call it out in `AGENTS.md` for future
-    third-party authors.
-  - **Imports:** every `from data_pipeline_template …` and `import
-    data_pipeline_template …` across `src/`, `tests/`, `dags/`,
-    `scripts/`.
-  - **`dags/data_pipeline_dags.py`:** content references only — keep
-    the filename (it's what Airflow's DagBag globs).
-  - **Entry-point invocations in docs / hooks / configs:** `python -m
-    data_pipeline_template …` in `AGENTS.md`, `CLAUDE.md` (symlink —
-    follows automatically), `README.md` (post-rewrite), this plan,
-    `.pre-commit-config.yaml`, `.mcp.json`, `.claude/skills/add-pipeline/
-    SKILL.md`, every `pipelines/*.yml`'s `# yaml-language-server`
-    directive (the schema path is relative so unaffected, but any
-    accompanying generator comments may reference the module).
-  - **`pipelines/_schema.json`:** regen via the existing
-    `regen-pipeline-schema` pre-commit hook — picks up the new module path
-    automatically.
-  - **`uv.lock`:** regen.
-  - **CI workflow:** any `uv run python -m data_pipeline_template …`
-    invocations in `.github/workflows/ci.yml`.
+- `destinations/_metadata.py` — drop `__<TYPE>__` segment from postgres
+  + snowflake `env_var_template`.
+- `AGENTS.md` — update env-var template doc.
+- Tests with hard-coded type-prefixed env vars:
+  `tests/unit/test_destinations_factory_config.py:43,64`,
+  `tests/unit/test_new_pipeline_scaffolder.py:158`,
+  `tests/unit/test_cli_pipelines.py:14`,
+  `tests/integration/test_destinations_snowflake.py:86`,
+  `tests/integration/test_alerting_e2e.py:38`.
+- `.github/workflows/ci.yml:76` — fix the `integration-postgres` env var.
+- Re-run `pipelines doctor` against every example YAML; verify each
+  resolves under the corrected template.
+- **Done when:**
+  `RUN_LIVE_PG=1 uv run pytest tests/integration -m "postgres and not cdc"`
+  against `docker compose up postgres-source postgres-destination`
+  passes locally + in CI; `pipelines doctor` reports the same env-var
+  key the user actually sets.
+
+### Segment 11 — Package rename
+**Package rename `data_pipeline_template` → `dlt_data_pipeline`** (deferred
+from Segment 10 — the GHCR image naming question surfaced the mismatch
+between the python package name and the repo / GHCR image name). The
+rename aligns all three: distribution name `dlt-data-pipeline` (PyPI
+convention, hyphenated), import path `dlt_data_pipeline` (Python
+identifier rule, matches the repo directory), GHCR image
+`ghcr.io/<owner>/dlt-data-pipeline` (shipped in Segment 10). Mechanical
+scope at the time of this entry: **64 files / 189 occurrences** (grep
+`data_pipeline_template`), plus a directory move. Land as a single
+dedicated commit so subsequent segments author against the final
+names. Documentation rewrite is explicitly out of scope — see Segment 15.
+
+Files to touch:
+- **Directory move:** `src/data_pipeline_template/` →
+  `src/dlt_data_pipeline/`.
+- **`pyproject.toml`:** `name`, `[tool.hatch.build.targets.wheel]
+  packages`, `[tool.mypy] packages`, the two entry-point GROUP names
+  (`data_pipeline_template.sources` and
+  `data_pipeline_template.sources.metadata`), and each entry-point
+  target path. Note: renaming the group breaks any out-of-tree source
+  plugins; none exist yet — call it out in `AGENTS.md` for future
+  third-party authors.
+- **Imports:** every `from data_pipeline_template …` and `import
+  data_pipeline_template …` across `src/`, `tests/`, `dags/`,
+  `scripts/`.
+- **`dags/data_pipeline_dags.py`:** content references only — keep the
+  filename (it's what Airflow's DagBag globs).
+- **Entry-point invocations in docs / hooks / configs:** `python -m
+  data_pipeline_template …` in `AGENTS.md`, `CLAUDE.md` (symlink —
+  follows automatically), `README.md` (stub today; full rewrite in
+  Segment 15), this plan, `.pre-commit-config.yaml`, `.mcp.json`,
+  `.claude/skills/add-pipeline/SKILL.md`, every `pipelines/*.yml`'s
+  `# yaml-language-server` directive (the schema path is relative so
+  unaffected, but any accompanying generator comments may reference
+  the module).
+- **`pipelines/_schema.json`:** regen via the existing
+  `regen-pipeline-schema` pre-commit hook — picks up the new module path
+  automatically.
+- **`uv.lock`:** regen.
+- **CI workflow:** any `uv run python -m data_pipeline_template …`
+  invocations in `.github/workflows/ci.yml`.
+
 - **Critical Files section update (this plan):** after the rename
   lands, sweep the `## Critical Files` block at the bottom of this plan
   to swap every `src/data_pipeline_template/…` path to
@@ -570,12 +578,6 @@ direction too. `README.md` is currently a 21-byte stub.
   `src/data_pipeline_template/airflow/`; principle #3 cites the
   entry-point group name).
 - **Done when:**
-  - `README.md` is the single entry point a new dev needs.
-  - `AGENTS.md` and `README.md` cross-link explicitly.
-  - Each component README ends with a "Known issues / troubleshooting"
-    subsection that quotes the relevant Tricky Parts item verbatim (so a
-    search hits both).
-  - A new dev adds a pipeline in ~10 min from root README alone.
   - `grep -r data_pipeline_template src/ tests/ dags/ scripts/
     pyproject.toml .github/ AGENTS.md README.md .mcp.json
     .pre-commit-config.yaml` returns zero hits (allowed only in
@@ -599,34 +601,6 @@ direction too. `README.md` is currently a 21-byte stub.
 Promoted from former "Tricky Parts (gap)" items — these have grown beyond
 "decide during build" and need explicit scope.
 
-- **Destination env-var convention fix (Segment 9 follow-up):** the
-  destinations metadata advertises
-  `DESTINATION__<TYPE>__<CONNECTION>__CREDENTIALS`
-  (see `src/data_pipeline_template/destinations/_metadata.py:37,45` and
-  `AGENTS.md:44-45`), but `destinations/factory.py` constructs each
-  destination with `destination_name=connection`, so dlt's actual lookup
-  path is `DESTINATION__<CONNECTION>__CREDENTIALS__*` — no type segment.
-  `.env.example:35` already uses the working form
-  (`DESTINATION__PG_WAREHOUSE__CREDENTIALS=...`). `tests/unit/test_destinations_factory.py:44-65`
-  already documents + locks the working behavior, so the metadata is the
-  bug. Fix scope:
-  - `destinations/_metadata.py` — drop `__<TYPE>__` segment from postgres
-    + snowflake `env_var_template`.
-  - `AGENTS.md` — update env-var template doc.
-  - Tests with hard-coded type-prefixed env vars:
-    `tests/unit/test_destinations_factory_config.py:43,64`,
-    `tests/unit/test_new_pipeline_scaffolder.py:158`,
-    `tests/unit/test_cli_pipelines.py:14`,
-    `tests/integration/test_destinations_snowflake.py:86`,
-    `tests/integration/test_alerting_e2e.py:38`.
-  - `.github/workflows/ci.yml:76` — fix the
-    `integration-postgres` env var.
-  - Re-run `pipelines doctor` against every example YAML; verify each
-    resolves under the corrected template.
-  - **Done when:** `RUN_LIVE_PG=1 uv run pytest tests/integration -m "postgres and not cdc"`
-    against `docker compose up postgres-source postgres-destination`
-    passes locally + in CI; `pipelines doctor` reports the same env-var
-    key the user actually sets.
 - **Backfill / initial-load strategy:** chunked / resumable loads via dlt
   `initial_value` partitioned ranges. Surface as YAML
   `sync.backfill.chunk_size` + `sync.backfill.partition_field`. Add a new
@@ -693,6 +667,55 @@ Promoted from former "Open Considerations → Alert depth".
 - **Done when:** killing `airflow-scheduler` container fires an alert
   within 10min; a schema add on a `schema_contract: evolve` pipeline
   fires an info-level alert.
+
+### Segment 15 — Documentation (final pass)
+Deliberately last so READMEs capture the final v1 surface in one pass
+instead of being revised after every later segment ships (`pipelines
+delete`, `run-backfill`, `pipelines promote`, log scrubber, env
+overlays, heartbeat DAG all land in 12-14 and need README coverage).
+
+**README ↔ AGENTS split:** `README.md` is the **human onboarding doc**;
+`AGENTS.md` is the **agent brief** (and `CLAUDE.md` symlinks to it from
+Segment 6.6). Don't duplicate — README links to AGENTS.md for the env-var
+convention, dry-run flow, CDC ops, MCP server, etc. Cross-link the other
+direction too. `README.md` is currently a 21-byte stub.
+
+- **Rewrite root `README.md`:** project purpose; architecture diagram
+  (ASCII or mermaid); quickstart (`docker compose up` + `seed_local.sh`);
+  the 10-min "add a pipeline" workflow (lift from this plan, cross-link
+  to the scaffolder); link table to per-component READMEs; cross-link to
+  `AGENTS.md` for the agent / introspection workflow.
+- **Per-component `README.md`** in each major dir — `config/`, `sources/`,
+  `destinations/`, `airflow/`, `observability/`, `docker/`, `pipelines/`,
+  `tests/`, `cli/`, plus a top-level docstring for `mcp_server.py`. Each
+  covers: what the component does, how to use / extend it (e.g. adding a
+  new source type to `registry.py`), known issues, troubleshooting. Must
+  reflect surface added in Segments 12-14:
+  - `cli/README.md` covers `run-backfill`, `pipelines delete`,
+    `pipelines promote` (Segments 12-13).
+  - `observability/README.md` covers the log-scrubbing filter
+    (Segment 12) and SLA-miss routing (Segment 14).
+  - `airflow/README.md` covers the heartbeat DAG (Segment 14).
+  - `config/README.md` covers env-overlay loader behavior (Segment 13).
+- **Fold gaps** — explicit Tricky-Parts → component-README mapping:
+  - CDC setup, replication-slot lifecycle → `sources/README.md`.
+  - Snowflake creds (+ Databricks deferral rationale) → `destinations/README.md`.
+  - Schema evolution → `pipelines/README.md` + `config/README.md`.
+  - State persistence, `max_active_runs`, pool → `airflow/README.md`.
+  - Secret leakage, log scrubbing → `observability/README.md`.
+  - Backfill, pipeline lifecycle, incremental edge cases →
+    `cli/README.md` + `sources/README.md` (now shipped in Segment 12,
+    no longer forward-references).
+  - PII → still cross-linked as post-v1.
+- **Done when:**
+  - `README.md` is the single entry point a new dev needs.
+  - `AGENTS.md` and `README.md` cross-link explicitly.
+  - Each component README ends with a "Known issues / troubleshooting"
+    subsection that quotes the relevant Tricky Parts item verbatim (so a
+    search hits both).
+  - A new dev adds a pipeline in ~10 min from root README alone.
+  - Every CLI subcommand shipped through Segment 14 has a README entry
+    (no orphan surface).
 
 ## Verification / Testing
 

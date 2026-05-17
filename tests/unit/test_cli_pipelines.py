@@ -11,7 +11,7 @@ from data_pipeline_template.__main__ import main
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 _PG_SOURCE_ENV = "SOURCES__SQL_DATABASE__PG_SOURCE__CREDENTIALS"
-_PG_DEST_ENV = "DESTINATION__POSTGRES__PG_WAREHOUSE__CREDENTIALS"
+_PG_DEST_ENV = "DESTINATION__PG_WAREHOUSE__CREDENTIALS"
 
 
 def test_validate_all_valid_fixtures(capsys: pytest.CaptureFixture[str]) -> None:

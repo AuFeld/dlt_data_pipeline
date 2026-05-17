@@ -41,12 +41,16 @@ resolves at runtime. Env-var templates:
 
 - Source: `SOURCES__<TYPE_UPPER>__<CONNECTION_UPPER>__CREDENTIALS`
   - e.g. `SOURCES__SQL_DATABASE__PG_SOURCE__CREDENTIALS=postgresql://...`
-- Destination: `DESTINATION__<TYPE_UPPER>__<CONNECTION_UPPER>__CREDENTIALS`
-  - e.g. `DESTINATION__POSTGRES__PG_WAREHOUSE__CREDENTIALS=postgresql://...`
+- Destination: `DESTINATION__<CONNECTION_UPPER>__CREDENTIALS`
+  - e.g. `DESTINATION__PG_WAREHOUSE__CREDENTIALS=postgresql://...`
+  - Destinations are keyed by logical connection name only (no
+    type segment). The factory builds each destination with
+    `destination_name=connection`, so dlt resolves credentials
+    under `destination.<connection>` exclusively.
 
 dlt-native fallback: the same value can live in `.dlt/secrets.toml` under
 `[sources.<type>.<connection>.credentials]` /
-`[destination.<type>.<connection>.credentials]`. Local dev: prefer
+`[destination.<connection>.credentials]`. Local dev: prefer
 `.dlt/secrets.toml` (git-ignored). Containers / CI / k8s: prefer env vars.
 
 ## Validate without running

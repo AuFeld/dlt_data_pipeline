@@ -34,15 +34,15 @@ METADATA: dict[DestinationType, DestinationTypeMetadata] = {
     ),
     DestinationType.postgres: DestinationTypeMetadata(
         description="Postgres destination via dlt's native postgres adapter.",
-        env_var_template="DESTINATION__POSTGRES__<CONNECTION>__CREDENTIALS",
+        env_var_template="DESTINATION__<CONNECTION>__CREDENTIALS",
         notes=(
-            "Fallback: [destination.postgres.<connection>.credentials] in "
+            "Fallback: [destination.<connection>.credentials] in "
             ".dlt/secrets.toml. Value is any libpq connection URI."
         ),
     ),
     DestinationType.snowflake: DestinationTypeMetadata(
         description="Snowflake destination via dlt's native snowflake adapter.",
-        env_var_template="DESTINATION__SNOWFLAKE__<CONNECTION>__CREDENTIALS",
+        env_var_template="DESTINATION__<CONNECTION>__CREDENTIALS",
         notes=(
             "Requires the optional 'snowflake' extra: uv sync --extra snowflake. "
             "Auth options:\n"
@@ -50,7 +50,7 @@ METADATA: dict[DestinationType, DestinationTypeMetadata] = {
             "snowflake://<user>:<password>@<account>/<database>?warehouse=<wh>&role=<role>\n"
             "  (2) Key-pair — set credentials.private_key (base64-encoded PEM) and "
             "credentials.private_key_passphrase under "
-            "[destination.snowflake.<connection>.credentials] in .dlt/secrets.toml. "
+            "[destination.<connection>.credentials] in .dlt/secrets.toml. "
             "Account / user / database / warehouse / role go in the same section.\n"
             "Stage: dlt creates an internal named stage by default — no external "
             "S3/ADLS staging credentials needed for v1."

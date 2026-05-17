@@ -40,7 +40,7 @@ def test_registry_list_types_covers_all_enum_members() -> None:
 
 def test_registry_describe_snowflake() -> None:
     meta = registry.describe("snowflake")
-    assert meta.env_var_template == "DESTINATION__SNOWFLAKE__<CONNECTION>__CREDENTIALS"
+    assert meta.env_var_template == "DESTINATION__<CONNECTION>__CREDENTIALS"
     assert "snowflake" in meta.notes.lower()
     assert "extra" in meta.notes.lower()
 
@@ -61,7 +61,7 @@ def test_registry_describe_unknown_raises_keyerror() -> None:
 def test_registry_describe_resolve_env_var_snowflake() -> None:
     meta = registry.describe("snowflake")
     resolved = meta.resolve_env_var("my_warehouse")
-    assert resolved == "DESTINATION__SNOWFLAKE__MY_WAREHOUSE__CREDENTIALS"
+    assert resolved == "DESTINATION__MY_WAREHOUSE__CREDENTIALS"
 
 
 def test_registry_describe_resolve_env_var_databricks_none() -> None:

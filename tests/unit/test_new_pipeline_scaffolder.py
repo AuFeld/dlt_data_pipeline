@@ -155,7 +155,7 @@ def test_destination_metadata_env_var_hint_present(tmp_path: Path) -> None:
         ]
     )
     body = (tmp_path / "with_dest_meta.yml").read_text()
-    assert "DESTINATION__POSTGRES__POSTGRES_CONN__CREDENTIALS" in body
+    assert "DESTINATION__POSTGRES_CONN__CREDENTIALS" in body
 
 
 def test_alerts_block_present_and_parses(tmp_path: Path) -> None:

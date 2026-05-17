@@ -35,7 +35,7 @@ def configured_alerts_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "sqlite:///:memory:",
     )
     monkeypatch.setenv(
-        "DESTINATION__POSTGRES__PG_WAREHOUSE__CREDENTIALS",
+        "DESTINATION__PG_WAREHOUSE__CREDENTIALS",
         "postgresql://u:p@h:5432/db",
     )
 

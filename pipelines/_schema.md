@@ -29,7 +29,7 @@ Unknown keys at any level are rejected (`extra="forbid"`) so typos fail loudly.
 | `pg_cdc` | Segment 7 ✓ | Postgres logical replication via the vendored `dlt pg_replication`. See `pg_cdc` config below. |
 
 `source.connection` is a **logical name** resolved at runtime from
-`.dlt/secrets.toml` (local) or env (`DESTINATION__<TYPE>__CREDENTIALS=...`,
+`.dlt/secrets.toml` (local) or env (`DESTINATION__<CONNECTION>__CREDENTIALS=...`,
 `SOURCES__<NAMESPACE>__CREDENTIALS=...`). Never put raw credentials in YAML.
 
 `source.config` is a free-form mapping today; typed sub-models will be added
