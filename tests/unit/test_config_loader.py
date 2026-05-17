@@ -60,4 +60,5 @@ def test_real_pipelines_dir_parses() -> None:
         "example_rest_to_duckdb",
         "example_pg_to_pg_incremental",
         "example_pg_cdc_to_snowflake",
+        "example_pg_cdc_to_pg",
     }

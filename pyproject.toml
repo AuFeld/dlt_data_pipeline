@@ -56,6 +56,10 @@ packages = ["src/data_pipeline_template"]
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
+# Vendored upstream sources (e.g. dlt pg_replication) are kept verbatim under
+# */_vendor/ so upgrades are a re-copy; lint them at upstream's standards, not
+# ours.
+extend-exclude = ["src/data_pipeline_template/sources/*/_vendor/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "TID", "UP", "B"]

@@ -51,16 +51,26 @@ def _apply_primary_key(source: DltSource, primary_key: str | list[str]) -> None:
 
 
 def build(cfg: PipelineConfig) -> RunnablePipeline:
-    if cfg.sync.mode == SyncMode.cdc:
-        raise NotImplementedError("cdc sync mode lands in Segment 7")
-
     builder = registry.get_builder(cfg.source.type)
     source = builder(cfg.source)
 
     if cfg.sync.mode == SyncMode.incremental:
         _apply_incremental_hints(source, cfg)
+    elif cfg.sync.mode == SyncMode.cdc:
+        # Validator guarantees primary_key is set when mode == cdc. The
+        # vendor pg_replication source manages LSN-based incremental state
+        # internally, so no _apply_incremental_hints call here.
+        assert cfg.sync.primary_key is not None
+        _apply_primary_key(source, cfg.sync.primary_key)
     elif cfg.sync.primary_key is not None:
         _apply_primary_key(source, cfg.sync.primary_key)
+
+    # cdc emits a mix of inserts + updates + deletes per LSN; append is
+    # incoherent. Silent-promote the default to merge but honor an explicit
+    # merge / replace from the YAML (audit-table use cases may want replace).
+    effective_disposition = cfg.options.write_disposition
+    if cfg.sync.mode == SyncMode.cdc and effective_disposition == WriteDisposition.append:
+        effective_disposition = WriteDisposition.merge
 
     destination = build_destination(cfg.destination)
     # Under Airflow, ``PipelineTasksGroup`` sets ``DLT_DATA_DIR`` to a per-task
@@ -77,7 +87,7 @@ def build(cfg: PipelineConfig) -> RunnablePipeline:
     return RunnablePipeline(
         pipeline=pipeline,
         source=source,
-        write_disposition=cfg.options.write_disposition,
+        write_disposition=effective_disposition,
     )
 
 

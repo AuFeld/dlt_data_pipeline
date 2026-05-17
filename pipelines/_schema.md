@@ -26,7 +26,7 @@ Unknown keys at any level are rejected (`extra="forbid"`) so typos fail loudly.
 | `rest_api` | Segment 3 | Wraps `dlt.sources.rest_api`. |
 | `sql_database` | Segment 5 | Wraps `dlt.sources.sql_database` (Postgres in v1; any SQLAlchemy URL). See `sql_database` config below. |
 | `filesystem` | Segment 8 | Local + S3, CSV/Parquet/JSONL. |
-| `pg_cdc` | Segment 7 | Postgres logical replication via `dlt.sources.pg_replication`. |
+| `pg_cdc` | Segment 7 ✓ | Postgres logical replication via the vendored `dlt pg_replication`. See `pg_cdc` config below. |
 
 `source.connection` is a **logical name** resolved at runtime from
 `.dlt/secrets.toml` (local) or env (`DESTINATION__<TYPE>__CREDENTIALS=...`,
@@ -55,6 +55,31 @@ Credentials resolve from `SOURCES__SQL_DATABASE__<CONNECTION_NAME_UPPER>__CREDEN
 **Cursor constraint:** every table listed in `tables` must expose a column
 with the name set in `sync.cursor_field`. Per-table cursor overrides are a
 future enhancement.
+
+### `pg_cdc` source config
+
+| Key | Required | Default | Notes |
+| --- | --- | --- | --- |
+| `slot_name` | yes | — | Logical replication slot name. Created on first run, reused on subsequent runs. |
+| `publication_name` | yes | — | Publication name. Created on first run with `publish = 'insert, update, delete'`. |
+| `tables` | yes | — | **Bare** table names (no schema prefix). One Airflow task per table snapshot + one for the streaming slot. |
+| `schema` | no | `public` | Schema the tables live in. |
+| `publish` | no | `insert, update, delete` | Comma-separated DML ops to publish. Set on first run only; later changes have no effect. |
+| `reset` | no | `false` | One-shot flag to drop + recreate the slot + publication. Use after incompatible DDL changes; turn it back off after the run. |
+| `include_columns` | no | all | `{table_name: [col, …]}` to limit replicated columns. |
+| `columns` | no | inferred | `{table_name: {col: {hint: value}}}` for column-level hints. |
+| `target_batch_size` | no | `1000` | Per-batch yield size cap. Whole transactions are always one batch. |
+| `flush_slot` | no | `true` | Whether to advance the slot on commit. `false` is a footgun (WAL accumulates) — only set in dry-run / shadow scenarios. |
+
+Credentials resolve from `SOURCES__PG_CDC__<CONNECTION_NAME_UPPER>__CREDENTIALS`
+(env) or `[sources.pg_cdc.<connection>.credentials]` in `.dlt/secrets.toml`.
+Value is a Postgres URL (e.g. `postgresql://replicator:pw@host:5432/db`); the
+role needs the `REPLICATION` attribute.
+
+**cdc mode wiring:** `pipeline_factory.build()` silent-promotes
+`options.write_disposition: append` → `merge` for cdc pipelines. Set
+`options.write_disposition: replace` explicitly if you want every run to
+truncate (e.g. shadow / audit reload tables).
 
 ## Sync modes — cross-field rules
 

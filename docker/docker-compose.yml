@@ -85,6 +85,10 @@ services:
       - "5433:5432"
     volumes:
       - postgres_source_data:/var/lib/postgresql/data
+      # Init SQL grants REPLICATION + creates the dedicated `replicator` role
+      # for Segment 7 CDC. Runs ONCE on a fresh data volume; pick it up after
+      # editing via `docker compose down -v && docker compose up -d`.
+      - ./postgres-source-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U source -d source_db"]
       interval: 5s
