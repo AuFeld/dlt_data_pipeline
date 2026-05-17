@@ -85,6 +85,15 @@ python_version = "3.12"
 strict = true
 mypy_path = "src"
 packages = ["data_pipeline_template"]
+# Vendored upstream sources are kept verbatim and lint at upstream's standards,
+# not ours (mirrors the ruff extend-exclude rule above).
+exclude = ["src/data_pipeline_template/sources/.*/_vendor/"]
+
+[[tool.mypy.overrides]]
+# kubernetes Python client lacks py.typed marker / stubs; lazily imported in
+# dag_factory._pod_override only when KubernetesExecutor is in use.
+module = ["kubernetes.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

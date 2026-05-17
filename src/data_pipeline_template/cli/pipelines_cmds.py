@@ -199,7 +199,7 @@ def doctor_pipelines(pipelines_root: str | Path = "pipelines") -> dict[str, obje
 def cmd_validate(args: argparse.Namespace) -> int:
     report = validate_pipelines(args.pipelines_root, args.name)
     if report["status"] == "error":
-        for err in report["errors"]:  # type: ignore[union-attr]
+        for err in report["errors"]:  # type: ignore[attr-defined]
             print(err, file=sys.stderr)
         return 1
 
@@ -207,7 +207,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
     if not pipelines:
         print(f"No pipelines found under {args.pipelines_root}.")
         return 0
-    for name in pipelines:  # type: ignore[union-attr]
+    for name in pipelines:  # type: ignore[attr-defined]
         print(f"OK: {name}")
     return 0
 
@@ -215,7 +215,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
 def cmd_doctor(args: argparse.Namespace) -> int:
     report = doctor_pipelines(args.pipelines_root)
     if report["status"] == "error":
-        for err in report["errors"]:  # type: ignore[union-attr]
+        for err in report["errors"]:  # type: ignore[attr-defined]
             print(err, file=sys.stderr)
         return 1
 
@@ -224,7 +224,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         print(f"No pipelines found under {args.pipelines_root}.")
         return 0
 
-    for entry in entries:  # type: ignore[union-attr]
+    for entry in entries:  # type: ignore[attr-defined]
         print(f"{entry['name']}: {entry['status']}")
         for slot in entry["slots"]:
             label = slot["env_var"] or "(no credentials required)"
