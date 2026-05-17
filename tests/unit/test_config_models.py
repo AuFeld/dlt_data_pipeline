@@ -229,3 +229,19 @@ def test_alerts_accepts_overrides() -> None:
     assert cfg.alerts.email_recipients == ["data@example.com"]
     assert cfg.alerts.on_schema_change is False
     assert cfg.alerts.on_sla_miss is False
+
+
+def test_sync_sla_minutes_optional() -> None:
+    cfg = PipelineConfig.model_validate(_base())
+    assert cfg.sync.sla_minutes is None
+
+
+def test_sync_sla_minutes_accepted() -> None:
+    cfg = PipelineConfig.model_validate(_base(sync={"mode": "full_refresh", "sla_minutes": 30}))
+    assert cfg.sync.sla_minutes == 30
+
+
+@pytest.mark.parametrize("bad", [0, -1, -60])
+def test_sync_sla_minutes_must_be_positive(bad: int) -> None:
+    with pytest.raises(ValidationError, match="sla_minutes"):
+        PipelineConfig.model_validate(_base(sync={"mode": "full_refresh", "sla_minutes": bad}))

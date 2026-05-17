@@ -181,3 +181,26 @@ def test_build_dag_trailing_tasks_inside_taskgroup(configs: dict) -> None:
     for needle in (".emit_dataset", ".schema_change_probe"):
         match = next(t for t in dag.tasks if t.task_id.endswith(needle))
         assert match.task_id.startswith(f"{cfg.name}.")
+
+
+def test_build_dag_no_sla_when_sla_minutes_unset(configs: dict) -> None:
+    cfg = configs["basic_rest"]
+    assert cfg.sync.sla_minutes is None
+    dag = build_dag(cfg)
+    for task in _tasks_for(dag):
+        # Airflow stores no sla attribute when unset.
+        assert task.sla is None, f"task {task.task_id} has unexpected sla={task.sla!r}"
+
+
+def test_build_dag_sla_minutes_plumbed_to_tasks(configs: dict) -> None:
+    from datetime import timedelta
+
+    cfg = configs["basic_rest"].model_copy(deep=True)
+    cfg.sync.sla_minutes = 30
+    dag = build_dag(cfg)
+    tasks = _tasks_for(dag)
+    assert tasks
+    for task in tasks:
+        assert task.sla == timedelta(minutes=30), (
+            f"task {task.task_id} missing sla; got {task.sla!r}"
+        )

@@ -91,6 +91,11 @@ def build_dag(cfg: PipelineConfig) -> DAG:
     task_kwargs: dict[str, Any] = {}
     if cfg.resources.cpu or cfg.resources.memory:
         task_kwargs["executor_config"] = {"pod_override": _pod_override(cfg.resources)}
+    if cfg.sync.sla_minutes is not None:
+        # Airflow's sla_miss_callback only fires for tasks that carry an
+        # ``sla`` attribute, so plumb the YAML value through here. The
+        # callback itself is wired below via make_sla_miss_callback.
+        task_kwargs["sla"] = timedelta(minutes=cfg.sync.sla_minutes)
 
     on_failure = make_on_failure_callback(cfg.alerts, cfg.name)
     on_sla_miss = make_sla_miss_callback(cfg.alerts, cfg.name)
