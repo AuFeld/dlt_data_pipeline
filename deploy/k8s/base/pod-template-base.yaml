@@ -1,0 +1,38 @@
+# Base pod template for KubernetesExecutor worker pods (Segment 10).
+#
+# Authoritative source — mirrored byte-for-byte at
+# `deploy/k8s/base/pod-template-base.yaml` so manifests apply cleanly via
+# `kubectl apply -f deploy/k8s/base/`. Edit this file, then `cp` to the
+# mirror before committing (pre-commit enforcement deferred to Segment 11).
+#
+# Airflow rewrites metadata.name / metadata.labels per task. Per-task CPU/RAM
+# overrides come from `dag_factory._pod_override()` building a V1Pod with a
+# container named "base"; KubernetesExecutor merges containers by name, so
+# the container name below MUST stay "base".
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dummy-name
+  namespace: airflow
+  labels:
+    app.kubernetes.io/name: airflow-worker
+    app.kubernetes.io/component: worker
+spec:
+  serviceAccountName: airflow-worker
+  restartPolicy: Never
+  containers:
+    - name: base
+      # Image patched at deploy time via
+      # `AIRFLOW__KUBERNETES_EXECUTOR__WORKER_CONTAINER_{REPOSITORY,TAG}`
+      # in the airflow-config ConfigMap. Literal value here is a parse-time
+      # placeholder so the scheduler can load the template at boot.
+      image: ghcr.io/OWNER/dlt-data-pipeline:placeholder
+      imagePullPolicy: IfNotPresent
+      envFrom:
+        - configMapRef:
+            name: airflow-config
+        - secretRef:
+            name: airflow-secrets
+      resources:
+        requests: {}
+        limits: {}

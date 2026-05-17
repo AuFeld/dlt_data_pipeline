@@ -3,6 +3,7 @@ name: ci
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
 
 concurrency:
@@ -142,3 +143,86 @@ jobs:
           SNOWFLAKE_TEST_DATABASE: ${{ secrets.SNOWFLAKE_TEST_DATABASE }}
           SNOWFLAKE_TEST_WAREHOUSE: ${{ secrets.SNOWFLAKE_TEST_WAREHOUSE }}
           SNOWFLAKE_TEST_ROLE: ${{ secrets.SNOWFLAKE_TEST_ROLE }}
+
+  build-and-push:
+    # Builds the `prod` Dockerfile target and pushes to GHCR. Runs on main
+    # pushes (rolling :sha-<long> tag) and on v* tag pushes (adds :v<tag> +
+    # :latest). Skipped on PRs.
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    needs: [lint, unit, integration-duckdb, integration-postgres]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/dlt-data-pipeline
+          tags: |
+            type=sha,format=long
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: prod
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    # Rolls the new image into the cluster. Tag pushes only (Segment 10
+    # decision — safer for prod hardening period). Cluster auth is a
+    # placeholder; swap for the cluster's actual auth model. Job is wired
+    # `if: false` until the AWS_DEPLOY_ROLE_ARN / EKS_CLUSTER secrets are
+    # provisioned — flip on by removing the explicit false.
+    if: false  # set to: startsWith(github.ref, 'refs/tags/v') once cluster auth is provisioned
+    needs: [build-and-push]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/dlt-data-pipeline
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: kubeconfig
+        run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER }}
+      - name: sync pod-template ConfigMap from repo source of truth
+        run: |
+          kubectl -n airflow create configmap airflow-pod-template \
+            --from-file=base.yaml=deploy/k8s/base/pod-template-base.yaml \
+            --dry-run=client -o yaml | kubectl apply -f -
+      - name: patch worker container tag so scheduler spawns new image
+        run: |
+          SHORT_SHA=${GITHUB_SHA:0:12}
+          kubectl -n airflow set env configmap/airflow-config \
+            AIRFLOW__KUBERNETES_EXECUTOR__WORKER_CONTAINER_TAG=sha-${SHORT_SHA}
+      - name: roll airflow components
+        run: |
+          IMAGE="${IMAGE_REPO}@${{ needs.build-and-push.outputs.digest }}"
+          for c in webserver scheduler triggerer; do
+            kubectl -n airflow set image deployment/airflow-$c $c=$IMAGE
+          done
+          for c in webserver scheduler triggerer; do
+            kubectl -n airflow rollout status deployment/airflow-$c --timeout=5m
+          done

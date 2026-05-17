@@ -1,0 +1,72 @@
+# Webserver deployment. 2 replicas + `maxUnavailable: 0` is load-bearing for
+# the Segment 10 done-when bullets:
+#   - "killing the webserver does not abort in-flight runs"
+#   - "webserver-deployment rolling restart during an in-flight run does
+#     NOT abort the run"
+# Scheduler owns run state; webserver is UI-only — losing a replica never
+# affects task execution.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-webserver
+  namespace: airflow
+  labels:
+    app: airflow-webserver
+    app.kubernetes.io/component: webserver
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: airflow-webserver
+  template:
+    metadata:
+      labels:
+        app: airflow-webserver
+        app.kubernetes.io/component: webserver
+    spec:
+      serviceAccountName: airflow-webserver
+      containers:
+        - name: webserver
+          # Image patched at deploy time by CI (`kubectl set image`).
+          image: ghcr.io/OWNER/dlt-data-pipeline:placeholder
+          imagePullPolicy: IfNotPresent
+          command: ["airflow", "webserver"]
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - configMapRef:
+                name: airflow-config
+            - secretRef:
+                name: airflow-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow-webserver
+  namespace: airflow
+spec:
+  selector:
+    app: airflow-webserver
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  type: ClusterIP

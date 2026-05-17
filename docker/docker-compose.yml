@@ -18,6 +18,10 @@ x-airflow-common: &airflow-common
   build:
     context: ..
     dockerfile: docker/Dockerfile
+    # Compose stack runs the `dev` Dockerfile target — includes pytest +
+    # responses for live-PG fixtures. CI build-and-push pushes the `prod`
+    # target only (Segment 10).
+    target: dev
   image: dlt_data_pipeline:local
   env_file:
     - ../.env
