@@ -123,6 +123,12 @@ class SyncConfig(_StrictModel):
     tolerance_seconds: int = Field(default=0, ge=0, le=86400)
     lookback: str | None = None
     backfill: BackfillConfig | None = None
+    # Per-task SLA in minutes. When set, each task generated inside the
+    # PipelineTasksGroup carries ``sla=timedelta(minutes=N)``; breaching
+    # invokes ``sla_miss_callback`` -> ``post_sla_miss_alert`` (Segment 14).
+    # Airflow 3.x replaces ``sla`` with the ``deadline`` API; see
+    # ``src/dlt_data_pipeline/airflow/README.md``.
+    sla_minutes: int | None = Field(default=None, gt=0)
 
     @field_validator("lookback")
     @classmethod

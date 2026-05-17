@@ -1,4 +1,4 @@
-"""Pipeline failure / schema-change / SLA-miss alerting.
+"""Pipeline failure / schema-change / SLA-miss / heartbeat alerting.
 
 Transports:
     Slack: stdlib ``urllib.request`` (zero new deps). Webhook URL + per-severity
@@ -240,6 +240,37 @@ def _schema_change_payload(
     return payload
 
 
+def _heartbeat_payload(
+    *,
+    component: str,
+    last_seen: datetime | None,
+    threshold_seconds: int,
+    severity: AlertSeverity,
+    channel: str | None,
+) -> dict[str, Any]:
+    text = f"[{severity.value}] airflow `{component}` heartbeat stale"
+    last_seen_str = last_seen.isoformat() if last_seen is not None else "never"
+    payload: dict[str, Any] = {
+        "username": "dpt-alerts",
+        "text": text,
+        "blocks": [
+            {"type": "header", "text": {"type": "plain_text", "text": text}},
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*Component:* `{component}`"},
+                    {"type": "mrkdwn", "text": f"*Last seen:* `{last_seen_str}`"},
+                    {"type": "mrkdwn", "text": f"*Threshold:* `{threshold_seconds}s`"},
+                    {"type": "mrkdwn", "text": f"*Severity:* {severity.value}"},
+                ],
+            },
+        ],
+    }
+    if channel:
+        payload["channel"] = channel
+    return payload
+
+
 def _sla_miss_payload(
     *,
     pipeline_name: str,
@@ -344,6 +375,46 @@ def post_schema_change_alert(
     )
     slack_ok, slack_reason = _post_slack(payload)
     return AlertDispatchResult(slack_ok, False, False, slack_reason)
+
+
+def post_heartbeat_alert(
+    *,
+    component: str,
+    last_seen: datetime | None,
+    threshold_seconds: int,
+    alerts: AlertsConfig,
+) -> AlertDispatchResult:
+    """Heartbeat-stale alert for a long-running Airflow component.
+
+    ``component`` is a free-form label ("scheduler", "triggerer"). Dedup key
+    folds it into the ``pipeline_name`` slot so two components dedup
+    independently. ``last_seen`` is ``None`` when no row exists yet (fresh
+    DB / never-started component) — payload renders "never".
+    """
+    dedup_key = f"airflow_{component}"
+    if _dedup_check_and_mark(dedup_key, alerts.severity, "heartbeat", alerts.dedup_window_minutes):
+        return AlertDispatchResult(False, False, True, "dedup-window")
+    channel = _resolve_slack_channel(alerts)
+    payload = _heartbeat_payload(
+        component=component,
+        last_seen=last_seen,
+        threshold_seconds=threshold_seconds,
+        severity=alerts.severity,
+        channel=channel,
+    )
+    slack_ok, slack_reason = _post_slack(payload)
+    subject = f"[{alerts.severity.value}] airflow {component} heartbeat stale"
+    last_seen_str = last_seen.isoformat() if last_seen is not None else "never"
+    html = (
+        f"<p><b>{subject}</b></p>"
+        f"<p>Component: <code>{component}</code><br/>"
+        f"Last seen: <code>{last_seen_str}</code><br/>"
+        f"Threshold: {threshold_seconds}s</p>"
+    )
+    email_ok, email_reason = _send_email(
+        subject=subject, html_body=html, recipients=alerts.email_recipients
+    )
+    return AlertDispatchResult(slack_ok, email_ok, False, slack_reason or email_reason)
 
 
 def post_sla_miss_alert(

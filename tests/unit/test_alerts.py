@@ -289,3 +289,67 @@ def test_sla_miss_alert_posts(_slack_env: None, capture_urlopen: list[Any]) -> N
     payload = _payload_of(capture_urlopen[0])
     assert payload["channel"] == "#oncall-data"
     assert "SLA miss" in payload["text"]
+
+
+def test_post_heartbeat_alert_dispatches(_slack_env: None, capture_urlopen: list[Any]) -> None:
+    last_seen = datetime(2026, 5, 17, 6, 0, 0, tzinfo=UTC)
+    result = alerts_mod.post_heartbeat_alert(
+        component="scheduler",
+        last_seen=last_seen,
+        threshold_seconds=60,
+        alerts=AlertsConfig(severity=AlertSeverity.P1),
+    )
+    assert result.slack_posted is True
+    assert result.deduped is False
+    assert len(capture_urlopen) == 1
+    payload = _payload_of(capture_urlopen[0])
+    assert payload["channel"] == "#oncall-data"
+    assert payload["text"].startswith("[P1]")
+    assert "scheduler" in payload["text"]
+    rendered = json.dumps(payload)
+    assert last_seen.isoformat() in rendered
+    assert "60s" in rendered
+
+
+def test_post_heartbeat_alert_renders_never_when_last_seen_none(
+    _slack_env: None, capture_urlopen: list[Any]
+) -> None:
+    alerts_mod.post_heartbeat_alert(
+        component="scheduler",
+        last_seen=None,
+        threshold_seconds=60,
+        alerts=AlertsConfig(severity=AlertSeverity.P1),
+    )
+    rendered = json.dumps(_payload_of(capture_urlopen[0]))
+    assert "never" in rendered
+
+
+def test_post_heartbeat_alert_dedups_within_window(
+    _slack_env: None, capture_urlopen: list[Any]
+) -> None:
+    cfg = AlertsConfig(severity=AlertSeverity.P1, dedup_window_minutes=30)
+    first = alerts_mod.post_heartbeat_alert(
+        component="scheduler", last_seen=None, threshold_seconds=60, alerts=cfg
+    )
+    second = alerts_mod.post_heartbeat_alert(
+        component="scheduler", last_seen=None, threshold_seconds=60, alerts=cfg
+    )
+    assert first.slack_posted is True
+    assert first.deduped is False
+    assert second.deduped is True
+    assert second.slack_posted is False
+    assert len(capture_urlopen) == 1
+
+
+def test_post_heartbeat_alert_dedups_per_component(
+    _slack_env: None, capture_urlopen: list[Any]
+) -> None:
+    cfg = AlertsConfig(severity=AlertSeverity.P1, dedup_window_minutes=30)
+    alerts_mod.post_heartbeat_alert(
+        component="scheduler", last_seen=None, threshold_seconds=60, alerts=cfg
+    )
+    alerts_mod.post_heartbeat_alert(
+        component="triggerer", last_seen=None, threshold_seconds=60, alerts=cfg
+    )
+    # Two distinct components -> two distinct dedup keys -> two posts.
+    assert len(capture_urlopen) == 2

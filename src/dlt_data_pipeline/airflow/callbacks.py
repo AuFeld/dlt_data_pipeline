@@ -101,25 +101,55 @@ def make_sla_miss_callback(alerts: AlertsConfig, pipeline_name: str) -> Callable
 def _extract_schema_updates(trace: Any) -> list[dict[str, Any]]:
     """Best-effort extraction of schema deltas from a dlt trace.
 
-    dlt's trace surface shifts across point releases. Walk what we can find
-    and return an empty list on anything unexpected — schema-change reporting
-    is informational and must never fail the load.
+    Walks two surfaces and dedupes:
+      * Legacy: ``step_info.table_metrics`` / ``tables_with_new_columns`` —
+        emitted by older dlt point releases.
+      * Current (dlt >= 1.x): ``step_info.load_packages[].schema_update`` —
+        a ``{table_name: {"columns": {col_name: spec, ...}, ...}}`` dict that
+        records the actual delta a load package applied to the schema.
+
+    Returns ``[]`` on anything unexpected — schema-change reporting is
+    informational and must never fail the load.
     """
     updates: list[dict[str, Any]] = []
+    seen_lp: set[tuple[str, tuple[str, ...]]] = set()
     steps = getattr(trace, "steps", None) or []
     for step in steps:
         info = getattr(step, "step_info", None)
         if info is None:
             continue
-        # Normalize step exposes table updates per dlt>=1.0.
+        # Legacy paths.
         tables = getattr(info, "table_metrics", None) or {}
         if isinstance(tables, dict):
             for tname, _ in tables.items():
                 updates.append({"step": getattr(step, "step", "?"), "table": tname})
-        # Extract step often exposes new columns.
         new_cols = getattr(info, "tables_with_new_columns", None) or []
         for tname in new_cols:
             updates.append({"step": "extract", "table": tname, "kind": "new_columns"})
+        # Current path: load_packages carry the authoritative schema_update.
+        # Dedup by (table, sorted_columns) so the same delta surfacing on
+        # extract+normalize+load doesn't triple-report.
+        for lp in getattr(info, "load_packages", None) or []:
+            schema_update = getattr(lp, "schema_update", None) or {}
+            if not isinstance(schema_update, dict):
+                continue
+            for tname, tdef in schema_update.items():
+                cols: list[str] = []
+                if isinstance(tdef, dict):
+                    cols_dict = tdef.get("columns") or {}
+                    if isinstance(cols_dict, dict):
+                        cols = sorted(cols_dict.keys())
+                key = (tname, tuple(cols))
+                if key in seen_lp:
+                    continue
+                seen_lp.add(key)
+                updates.append(
+                    {
+                        "step": getattr(step, "step", "?"),
+                        "table": tname,
+                        "new_columns": cols,
+                    }
+                )
     return updates
 
 

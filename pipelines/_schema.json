@@ -376,6 +376,19 @@
           "default": null,
           "title": "Primary Key"
         },
+        "sla_minutes": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sla Minutes"
+        },
         "tolerance_seconds": {
           "default": 0,
           "maximum": 86400,
