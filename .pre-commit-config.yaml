@@ -6,6 +6,10 @@ repos:
         args: [--markdown-linebreak-ext=md]
       - id: end-of-file-fixer
       - id: check-yaml
+        # k8s manifests under deploy/k8s/ are multi-document (Service +
+        # Deployment + RBAC in one file is idiomatic). Allow `---`
+        # separators repo-wide; single-doc files are still valid input.
+        args: ["--allow-multiple-documents"]
         # Fixture YAMLs are intentionally malformed to exercise the loader's
         # error paths — skip them here.
         exclude: |

@@ -495,7 +495,7 @@ wiring landed in Segment 4 (`config/models.py:112`,
   - Webserver-deployment rolling restart during an in-flight run does
     NOT abort the run.
 
-### Segment 11 — Documentation
+### Segment 11 — Documentation + package rename
 **README ↔ AGENTS split:** `README.md` is the **human onboarding doc**;
 `AGENTS.md` is the **agent brief** (and `CLAUDE.md` symlinks to it from
 Segment 6.6). Don't duplicate — README links to AGENTS.md for the env-var
@@ -523,6 +523,52 @@ direction too. `README.md` is currently a 21-byte stub.
     in Segment 9).
   - Backfill, pipeline lifecycle, incremental edge cases, PII →
     cross-link to Segment 12 (where these items are now scoped).
+- **Package rename `data_pipeline_template` → `dlt_data_pipeline`** (deferred
+  from Segment 10 — the GHCR image naming question surfaced the mismatch
+  between the python package name and the repo / GHCR image name). The
+  rename aligns all three: distribution name `dlt-data-pipeline` (PyPI
+  convention, hyphenated), import path `dlt_data_pipeline` (Python
+  identifier rule, matches the repo directory), GHCR image
+  `ghcr.io/<owner>/dlt-data-pipeline` (shipped in Segment 10).
+  Mechanical scope at the time of this entry: **64 files / 189
+  occurrences** (grep `data_pipeline_template`), plus a directory move.
+  Land as a single dedicated commit at the start of the Segment 11 work
+  so the docs rewrite below uses the final names.
+  Files to touch:
+  - **Directory move:** `src/data_pipeline_template/` →
+    `src/dlt_data_pipeline/`.
+  - **`pyproject.toml`:** `name`, `[tool.hatch.build.targets.wheel]
+    packages`, `[tool.mypy] packages`, the two entry-point GROUP names
+    (`data_pipeline_template.sources` and
+    `data_pipeline_template.sources.metadata`), and each entry-point
+    target path. Note: renaming the group breaks any out-of-tree source
+    plugins; none exist yet — call it out in `AGENTS.md` for future
+    third-party authors.
+  - **Imports:** every `from data_pipeline_template …` and `import
+    data_pipeline_template …` across `src/`, `tests/`, `dags/`,
+    `scripts/`.
+  - **`dags/data_pipeline_dags.py`:** content references only — keep
+    the filename (it's what Airflow's DagBag globs).
+  - **Entry-point invocations in docs / hooks / configs:** `python -m
+    data_pipeline_template …` in `AGENTS.md`, `CLAUDE.md` (symlink —
+    follows automatically), `README.md` (post-rewrite), this plan,
+    `.pre-commit-config.yaml`, `.mcp.json`, `.claude/skills/add-pipeline/
+    SKILL.md`, every `pipelines/*.yml`'s `# yaml-language-server`
+    directive (the schema path is relative so unaffected, but any
+    accompanying generator comments may reference the module).
+  - **`pipelines/_schema.json`:** regen via the existing
+    `regen-pipeline-schema` pre-commit hook — picks up the new module path
+    automatically.
+  - **`uv.lock`:** regen.
+  - **CI workflow:** any `uv run python -m data_pipeline_template …`
+    invocations in `.github/workflows/ci.yml`.
+- **Critical Files section update (this plan):** after the rename
+  lands, sweep the `## Critical Files` block at the bottom of this plan
+  to swap every `src/data_pipeline_template/…` path to
+  `src/dlt_data_pipeline/…`. Also update the design-principle examples
+  in `## Context` (principle #2 cites
+  `src/data_pipeline_template/airflow/`; principle #3 cites the
+  entry-point group name).
 - **Done when:**
   - `README.md` is the single entry point a new dev needs.
   - `AGENTS.md` and `README.md` cross-link explicitly.
@@ -530,6 +576,24 @@ direction too. `README.md` is currently a 21-byte stub.
     subsection that quotes the relevant Tricky Parts item verbatim (so a
     search hits both).
   - A new dev adds a pipeline in ~10 min from root README alone.
+  - `grep -r data_pipeline_template src/ tests/ dags/ scripts/
+    pyproject.toml .github/ AGENTS.md README.md .mcp.json
+    .pre-commit-config.yaml` returns zero hits (allowed only in
+    historical references inside `data_pipeline_plan.md` itself, and in
+    `uv.lock` cached upstream metadata).
+  - `pip install -e .` resolves under the new distribution name;
+    `python -c "import dlt_data_pipeline; print(dlt_data_pipeline.__file__)"`
+    succeeds.
+  - The `data_pipeline_template.sources` entry-point group is renamed to
+    `dlt_data_pipeline.sources`; `python -c "from importlib.metadata
+    import entry_points; print(entry_points(group='dlt_data_pipeline.sources'))"`
+    lists the four builders.
+  - `python -m dlt_data_pipeline pipelines validate` exits 0 against
+    every committed example.
+  - Pre-commit `regen-pipeline-schema` runs clean against the renamed
+    package.
+  - CI matrix green on the rename commit alone (no behavior change, only
+    identifier churn).
 
 ### Segment 12 — Operational hardening
 Promoted from former "Tricky Parts (gap)" items — these have grown beyond

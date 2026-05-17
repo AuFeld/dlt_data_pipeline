@@ -1,0 +1,51 @@
+# Triggerer deployment. Single replica for v1; handles deferrable operators
+# (none in this codebase yet — shipped pre-emptively because the executor
+# switch is the right time to formalize the three-process Airflow topology).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-triggerer
+  namespace: airflow
+  labels:
+    app: airflow-triggerer
+    app.kubernetes.io/component: triggerer
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: airflow-triggerer
+  template:
+    metadata:
+      labels:
+        app: airflow-triggerer
+        app.kubernetes.io/component: triggerer
+    spec:
+      serviceAccountName: airflow-triggerer
+      containers:
+        - name: triggerer
+          image: ghcr.io/OWNER/dlt-data-pipeline:placeholder
+          imagePullPolicy: IfNotPresent
+          command: ["airflow", "triggerer"]
+          envFrom:
+            - configMapRef:
+                name: airflow-config
+            - secretRef:
+                name: airflow-secrets
+          livenessProbe:
+            exec:
+              command:
+                - airflow
+                - jobs
+                - check
+                - --job-type
+                - TriggererJob
+                - --hostname
+                - "$(hostname)"
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            failureThreshold: 5

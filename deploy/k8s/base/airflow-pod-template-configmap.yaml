@@ -1,0 +1,39 @@
+# Worker pod template ConfigMap — mounted onto the scheduler deployment at
+# /opt/airflow/pod_templates/base.yaml. The scheduler is the only process
+# that reads AIRFLOW__KUBERNETES_EXECUTOR__POD_TEMPLATE_FILE (it spawns
+# worker pods); webserver/triggerer/workers do not need the file.
+#
+# Contents MUST stay byte-identical to deploy/k8s/base/pod-template-base.yaml
+# (the in-repo source of truth). The deploy CI job rebuilds this ConfigMap
+# via `kubectl create configmap --from-file --dry-run=client -o yaml | apply`
+# so updates to the template ship without an image rebuild.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airflow-pod-template
+  namespace: airflow
+data:
+  base.yaml: |
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: dummy-name
+      namespace: airflow
+      labels:
+        app.kubernetes.io/name: airflow-worker
+        app.kubernetes.io/component: worker
+    spec:
+      serviceAccountName: airflow-worker
+      restartPolicy: Never
+      containers:
+        - name: base
+          image: ghcr.io/OWNER/dlt-data-pipeline:placeholder
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: airflow-config
+            - secretRef:
+                name: airflow-secrets
+          resources:
+            requests: {}
+            limits: {}

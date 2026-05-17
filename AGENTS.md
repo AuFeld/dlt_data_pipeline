@@ -115,6 +115,20 @@ flow through `AIRFLOW__<SECTION>__<KEY>` env vars set in
 keeps the same image swappable between LocalExecutor (dev) and
 KubernetesExecutor (prod) per Design principle #4.
 
+## Prod k8s deployment (Segment 10)
+
+KubernetesExecutor manifests + worker pod template live under
+[`deploy/k8s/base/`](deploy/k8s/base/) — see
+[`deploy/k8s/base/README.md`](deploy/k8s/base/README.md) for the apply
+order, pod-template dual-write rule, secrets backend v1 vs v2, and the
+known destination-env-var-shape caveat (Segment 12 follow-up).
+The authoritative pod template is
+[`airflow_home/pod_templates/base.yaml`](airflow_home/pod_templates/base.yaml);
+[`deploy/k8s/base/pod-template-base.yaml`](deploy/k8s/base/pod-template-base.yaml)
+must stay byte-identical. CI build-and-push (`.github/workflows/ci.yml`)
+publishes the `prod` Dockerfile target to GHCR on tag pushes; the deploy
+job ships `if: false` until cluster auth secrets are provisioned.
+
 ## CDC operations (Segment 7, `pg_cdc` source)
 
 `pg_cdc` wraps the vendored

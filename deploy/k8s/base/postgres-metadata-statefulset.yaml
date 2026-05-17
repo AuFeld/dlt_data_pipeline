@@ -1,0 +1,80 @@
+# Airflow metadata Postgres. Single-replica StatefulSet for v1 — fine for
+# small deployments. Prod overlays may replace this with an external managed
+# service (RDS / CloudSQL) by deleting the StatefulSet+Service+PVC and
+# pointing `AIRFLOW__DATABASE__SQL_ALCHEMY_CONN` in airflow-secrets at the
+# external endpoint. Image pin matches docker-compose for parity.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-metadata-secret
+  namespace: airflow
+type: Opaque
+stringData:
+  POSTGRES_USER: "airflow"
+  POSTGRES_PASSWORD: "REPLACE_ME"
+  POSTGRES_DB: "airflow"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-metadata
+  namespace: airflow
+  labels:
+    app: postgres-metadata
+spec:
+  clusterIP: None
+  selector:
+    app: postgres-metadata
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-metadata
+  namespace: airflow
+spec:
+  serviceName: postgres-metadata
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-metadata
+  template:
+    metadata:
+      labels:
+        app: postgres-metadata
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+              name: postgres
+          envFrom:
+            - secretRef:
+                name: postgres-metadata-secret
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+              subPath: postgres
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "airflow", "-d", "airflow"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "airflow", "-d", "airflow"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi

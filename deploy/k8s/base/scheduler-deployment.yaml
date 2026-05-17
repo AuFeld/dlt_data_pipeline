@@ -1,0 +1,65 @@
+# Scheduler deployment. Single replica for v1 (Airflow 2 supports HA
+# scheduler with replicas>1; deferred — adds metadata-DB contention without
+# a measured win for this scale).
+#
+# Scheduler mounts the airflow-pod-template ConfigMap so the spawn-side
+# `AIRFLOW__KUBERNETES_EXECUTOR__POD_TEMPLATE_FILE` resolves to a real file
+# in the pod fs. The deploy CI job rebuilds the ConfigMap from
+# `deploy/k8s/base/pod-template-base.yaml` on each release, so pod-spec rev
+# does NOT require an image rebuild.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-scheduler
+  namespace: airflow
+  labels:
+    app: airflow-scheduler
+    app.kubernetes.io/component: scheduler
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: airflow-scheduler
+  template:
+    metadata:
+      labels:
+        app: airflow-scheduler
+        app.kubernetes.io/component: scheduler
+    spec:
+      serviceAccountName: airflow-scheduler
+      containers:
+        - name: scheduler
+          image: ghcr.io/OWNER/dlt-data-pipeline:placeholder
+          imagePullPolicy: IfNotPresent
+          command: ["airflow", "scheduler"]
+          envFrom:
+            - configMapRef:
+                name: airflow-config
+            - secretRef:
+                name: airflow-secrets
+          volumeMounts:
+            - name: pod-template
+              mountPath: /opt/airflow/pod_templates
+              readOnly: true
+          livenessProbe:
+            exec:
+              command:
+                - airflow
+                - jobs
+                - check
+                - --job-type
+                - SchedulerJob
+                - --hostname
+                - "$(hostname)"
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            failureThreshold: 5
+      volumes:
+        - name: pod-template
+          configMap:
+            name: airflow-pod-template

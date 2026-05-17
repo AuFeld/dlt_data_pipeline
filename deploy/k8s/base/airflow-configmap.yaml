@@ -1,0 +1,39 @@
+# Non-secret Airflow env overrides — shared by webserver / scheduler /
+# triggerer deployments AND the worker pod template via `envFrom`. Per the
+# repo-wide "do not edit airflow.cfg, env-override instead" rule (Segment 6),
+# all environment-specific config lives here, not in airflow.cfg.
+#
+# Placeholders (`OWNER`, `BUCKET`) are patched by per-env overlays / the
+# deploy CI job before `kubectl apply`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airflow-config
+  namespace: airflow
+data:
+  AIRFLOW_HOME: "/opt/airflow"
+  AIRFLOW__CORE__EXECUTOR: "KubernetesExecutor"
+  AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+  AIRFLOW__CORE__DAGS_FOLDER: "/opt/app/dags"
+
+  AIRFLOW__KUBERNETES_EXECUTOR__NAMESPACE: "airflow"
+  AIRFLOW__KUBERNETES_EXECUTOR__POD_TEMPLATE_FILE: "/opt/airflow/pod_templates/base.yaml"
+  # Worker image: REPOSITORY pinned here, TAG patched per-deploy by the CI
+  # `deploy` job (`kubectl set env configmap/airflow-config
+  # AIRFLOW__KUBERNETES_EXECUTOR__WORKER_CONTAINER_TAG=sha-<short>`).
+  AIRFLOW__KUBERNETES_EXECUTOR__WORKER_CONTAINER_REPOSITORY: "ghcr.io/OWNER/dlt-data-pipeline"
+  AIRFLOW__KUBERNETES_EXECUTOR__WORKER_CONTAINER_TAG: "placeholder"
+  AIRFLOW__KUBERNETES_EXECUTOR__DELETE_WORKER_PODS: "True"
+  AIRFLOW__KUBERNETES_EXECUTOR__DELETE_WORKER_PODS_ON_FAILURE: "False"
+
+  # S3 remote logging — pod local disk is ephemeral. Provider:
+  # apache-airflow-providers-amazon (pyproject.toml). Credentials resolve
+  # from AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY in airflow-secrets, or
+  # via IRSA (v2, document-only).
+  AIRFLOW__LOGGING__REMOTE_LOGGING: "True"
+  AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER: "s3://BUCKET/airflow/logs"
+  AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID: "aws_default"
+  AIRFLOW__LOGGING__ENCRYPT_S3_LOGS: "False"
+
+  AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "False"
+  PYTHONPATH: "/opt/app/src"
