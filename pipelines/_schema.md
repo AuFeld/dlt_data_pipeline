@@ -112,6 +112,31 @@ in Segment 4.
 
 `schedule.enabled` defaults to `true`.
 
+## Environment overlays (Segment 13)
+
+Re-map a narrow set of fields per environment without editing the base
+YAML. Overlay file: `pipelines/_env/<env>.yml`, keyed by pipeline name.
+Loaded automatically by the loader; active env resolves from CLI
+`--env <name>` > `$DLT_ENV` > `"dev"`.
+
+Allowed overlay scope (validated by `PipelineOverlay`; out-of-scope keys
+raise `ConfigError`):
+
+| Path | Notes |
+| --- | --- |
+| `source.connection` | Re-target credentials. Base `source.config:` survives. |
+| `destination.type` | Flip e.g. `duckdb` → `snowflake` per env. |
+| `destination.connection` | Re-target credentials. |
+| `destination.dataset` | Different dataset name per env. |
+| `schedule.enabled` | Pause / enable per env. |
+| `resources.cpu` / `resources.memory` | Per-env pod sizing (KubernetesExecutor). |
+
+`resources` replaces wholesale (cpu + memory ride together); other blocks
+merge leaf-by-leaf. See
+[`src/dlt_data_pipeline/config/README.md`](../src/dlt_data_pipeline/config/README.md)
+for full semantics. Diff two envs with
+`python -m dlt_data_pipeline pipelines promote <name> --from <env> --to <env>`.
+
 ## Minimal example
 
 ```yaml

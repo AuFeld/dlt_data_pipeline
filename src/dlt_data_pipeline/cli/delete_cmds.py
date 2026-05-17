@@ -160,6 +160,7 @@ def delete_pipeline(
     pipelines_root: str | Path = "pipelines",
     *,
     keep_data: bool = False,
+    env: str | None = None,
 ) -> dict[str, object]:
     """Tear down a pipeline's external state. Pure helper.
 
@@ -173,7 +174,7 @@ def delete_pipeline(
     """
     root = Path(pipelines_root)
     try:
-        configs = load_pipelines(root)
+        configs = load_pipelines(root, env=env)
     except ConfigError as exc:
         return {
             "status": "error",
@@ -234,7 +235,7 @@ def cmd_delete(args: argparse.Namespace) -> int:
         _print_dry_run(args.name, args.pipelines_root, args.keep_data)
         return 0
 
-    report = delete_pipeline(args.name, args.pipelines_root, keep_data=args.keep_data)
+    report = delete_pipeline(args.name, args.pipelines_root, keep_data=args.keep_data, env=args.env)
     if report["status"] == "not-found":
         print(f"pipeline {args.name!r} not found under {args.pipelines_root}", file=sys.stderr)
         return 1

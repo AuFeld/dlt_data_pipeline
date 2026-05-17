@@ -1,7 +1,8 @@
-"""`pipelines validate` / `pipelines doctor` subcommands.
+"""`pipelines validate` / `pipelines doctor` / `pipelines promote` subcommands.
 
-Pure data helpers (``validate_pipelines`` / ``doctor_pipelines``) return
-structured reports consumed by both the CLI wrappers and the MCP server.
+Pure data helpers (``validate_pipelines`` / ``doctor_pipelines`` /
+``promote_pipelines``) return structured reports consumed by both the CLI
+wrappers and the MCP server.
 """
 
 from __future__ import annotations
@@ -9,12 +10,17 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from enum import StrEnum
+from enum import Enum, StrEnum
 from pathlib import Path
+from typing import Any
 
 import dlt
 
-from dlt_data_pipeline.config.loader import ConfigError, load_pipelines
+from dlt_data_pipeline.config.loader import (
+    ConfigError,
+    load_pipelines,
+    resolve_env,
+)
 from dlt_data_pipeline.config.models import DestinationType, PipelineConfig
 from dlt_data_pipeline.destinations import _metadata as dest_metadata
 from dlt_data_pipeline.sources import registry
@@ -23,6 +29,7 @@ from dlt_data_pipeline.sources import registry
 class CredentialStatus(StrEnum):
     OK_ENV = "env"
     OK_SECRETS_TOML = "secrets-toml"
+    OK_AIRFLOW_BACKEND = "airflow-backend"
     OK_NO_CREDS_REQUIRED = "no-creds-required"
     MISSING = "MISSING"
 
@@ -30,6 +37,7 @@ class CredentialStatus(StrEnum):
 def validate_pipelines(
     pipelines_root: str | Path = "pipelines",
     name: str | None = None,
+    env: str | None = None,
 ) -> dict[str, object]:
     """Parse + validate one or all YAMLs. Pure helper (no printing, no sys.exit).
 
@@ -37,16 +45,19 @@ def validate_pipelines(
         {
           "status": "ok" | "error",
           "pipelines_root": str,
+          "env": str,
           "errors": [str, ...],           # aggregated loader errors
           "pipelines": ["name", ...],     # validated names (empty when status=error)
         }
     """
+    active_env = resolve_env(env)
     try:
-        configs = load_pipelines(pipelines_root)
+        configs = load_pipelines(pipelines_root, env=active_env)
     except ConfigError as exc:
         return {
             "status": "error",
             "pipelines_root": str(pipelines_root),
+            "env": active_env,
             "errors": [str(exc)],
             "pipelines": [],
         }
@@ -56,6 +67,7 @@ def validate_pipelines(
             return {
                 "status": "error",
                 "pipelines_root": str(pipelines_root),
+                "env": active_env,
                 "errors": [
                     f"pipeline {name!r} not found under {str(pipelines_root)!r}; "
                     f"available: {sorted(configs)}"
@@ -65,6 +77,7 @@ def validate_pipelines(
         return {
             "status": "ok",
             "pipelines_root": str(pipelines_root),
+            "env": active_env,
             "errors": [],
             "pipelines": [name],
         }
@@ -72,6 +85,7 @@ def validate_pipelines(
     return {
         "status": "ok",
         "pipelines_root": str(pipelines_root),
+        "env": active_env,
         "errors": [],
         "pipelines": sorted(configs),
     }
@@ -95,6 +109,12 @@ def _probe_credential(env_var: str | None) -> CredentialStatus:
         value = None
     if value:
         return CredentialStatus.OK_SECRETS_TOML
+    # Airflow Secrets Backend (Segment 13, doc + signal only). The CLI does
+    # NOT call the backend — that would require an Airflow runtime
+    # dependency in the doctor path. Presence of the env var alone signals
+    # "doctor cannot verify; trust at runtime."
+    if os.environ.get("AIRFLOW__SECRETS__BACKEND"):
+        return CredentialStatus.OK_AIRFLOW_BACKEND
     return CredentialStatus.MISSING
 
 
@@ -162,13 +182,17 @@ def _doctor_one(name: str, cfg: PipelineConfig) -> dict[str, object]:
     }
 
 
-def doctor_pipelines(pipelines_root: str | Path = "pipelines") -> dict[str, object]:
+def doctor_pipelines(
+    pipelines_root: str | Path = "pipelines",
+    env: str | None = None,
+) -> dict[str, object]:
     """Probe expected env vars + .dlt secrets. Pure helper.
 
     Returns:
         {
           "status": "ok" | "missing" | "error",
           "pipelines_root": str,
+          "env": str,
           "errors": [str, ...],                # loader errors when status=error
           "report": [
             {"name": str, "status": "OK"|"MISSING", "slots": [{...}, {...}]},
@@ -176,12 +200,14 @@ def doctor_pipelines(pipelines_root: str | Path = "pipelines") -> dict[str, obje
           ],
         }
     """
+    active_env = resolve_env(env)
     try:
-        configs = load_pipelines(pipelines_root)
+        configs = load_pipelines(pipelines_root, env=active_env)
     except ConfigError as exc:
         return {
             "status": "error",
             "pipelines_root": str(pipelines_root),
+            "env": active_env,
             "errors": [str(exc)],
             "report": [],
         }
@@ -191,13 +217,105 @@ def doctor_pipelines(pipelines_root: str | Path = "pipelines") -> dict[str, obje
     return {
         "status": "missing" if any_missing else "ok",
         "pipelines_root": str(pipelines_root),
+        "env": active_env,
         "errors": [],
         "report": report,
     }
 
 
+_OVERLAY_FIELD_PATHS: tuple[tuple[str, ...], ...] = (
+    ("source", "connection"),
+    ("destination", "type"),
+    ("destination", "connection"),
+    ("destination", "dataset"),
+    ("schedule", "enabled"),
+    ("resources", "cpu"),
+    ("resources", "memory"),
+)
+
+
+def _extract_path(cfg: PipelineConfig, path: tuple[str, ...]) -> Any:
+    value: Any = cfg
+    for part in path:
+        value = getattr(value, part, None)
+        if value is None:
+            return None
+    # Enum values render as their .value (e.g. "duckdb") for cleaner diffs.
+    if isinstance(value, Enum):
+        return value.value
+    return value
+
+
+def promote_pipelines(
+    name: str,
+    from_env: str,
+    to_env: str,
+    pipelines_root: str | Path = "pipelines",
+) -> dict[str, object]:
+    """Diff merged config across two envs for one pipeline. Pure helper.
+
+    Returns:
+        {
+          "status": "ok" | "error" | "not-found",
+          "name": str,
+          "from_env": str, "to_env": str,
+          "changes": [{"field": str, "from": Any, "to": Any}, ...],
+          "errors": [str, ...],
+        }
+    """
+    try:
+        from_configs = load_pipelines(pipelines_root, env=from_env)
+        to_configs = load_pipelines(pipelines_root, env=to_env)
+    except ConfigError as exc:
+        return {
+            "status": "error",
+            "name": name,
+            "from_env": from_env,
+            "to_env": to_env,
+            "changes": [],
+            "errors": [str(exc)],
+        }
+
+    if name not in from_configs or name not in to_configs:
+        available = sorted(set(from_configs) | set(to_configs))
+        return {
+            "status": "not-found",
+            "name": name,
+            "from_env": from_env,
+            "to_env": to_env,
+            "changes": [],
+            "errors": [
+                f"pipeline {name!r} not found under {str(pipelines_root)!r}; available: {available}"
+            ],
+        }
+
+    from_cfg = from_configs[name]
+    to_cfg = to_configs[name]
+    changes: list[dict[str, Any]] = []
+    for path in _OVERLAY_FIELD_PATHS:
+        from_value = _extract_path(from_cfg, path)
+        to_value = _extract_path(to_cfg, path)
+        if from_value != to_value:
+            changes.append(
+                {
+                    "field": ".".join(path),
+                    "from": from_value,
+                    "to": to_value,
+                }
+            )
+
+    return {
+        "status": "ok",
+        "name": name,
+        "from_env": from_env,
+        "to_env": to_env,
+        "changes": changes,
+        "errors": [],
+    }
+
+
 def cmd_validate(args: argparse.Namespace) -> int:
-    report = validate_pipelines(args.pipelines_root, args.name)
+    report = validate_pipelines(args.pipelines_root, args.name, env=args.env)
     if report["status"] == "error":
         for err in report["errors"]:  # type: ignore[attr-defined]
             print(err, file=sys.stderr)
@@ -213,7 +331,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    report = doctor_pipelines(args.pipelines_root)
+    report = doctor_pipelines(args.pipelines_root, env=args.env)
     if report["status"] == "error":
         for err in report["errors"]:  # type: ignore[attr-defined]
             print(err, file=sys.stderr)
@@ -233,3 +351,30 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             )
 
     return 1 if report["status"] == "missing" else 0
+
+
+def cmd_promote(args: argparse.Namespace) -> int:
+    report = promote_pipelines(args.name, args.from_env, args.to_env, args.pipelines_root)
+    if report["status"] == "error":
+        for err in report["errors"]:  # type: ignore[attr-defined]
+            print(err, file=sys.stderr)
+        return 1
+    if report["status"] == "not-found":
+        for err in report["errors"]:  # type: ignore[attr-defined]
+            print(err, file=sys.stderr)
+        return 1
+
+    changes = report["changes"]  # type: ignore[index]
+    print(f"pipeline: {report['name']}")
+    print(f"  {report['from_env']} -> {report['to_env']}")
+    if not changes:
+        print("    (no differences in overlay-eligible fields)")
+        return 0
+    width = max(len(c["field"]) for c in changes)
+    for change in changes:
+        from_val = "(unset)" if change["from"] is None else change["from"]
+        to_val = "(unset)" if change["to"] is None else change["to"]
+        print(f"    {change['field']:<{width}}: {from_val} -> {to_val}")
+    plural = "s" if len(changes) != 1 else ""
+    print(f"  {len(changes)} field{plural} differ.")
+    return 0

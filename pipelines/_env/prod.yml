@@ -1,0 +1,19 @@
+# Per-environment overlay (Segment 13). Loaded when DLT_ENV=prod.
+#
+# Same base pipelines/<name>.yml, re-targeted to prod destinations / cadence.
+
+example_rest_to_duckdb:
+  destination:
+    type: snowflake
+    connection: snowflake_warehouse
+    dataset: prod_raw_demo
+  resources:
+    cpu: "1000m"
+    memory: "2Gi"
+
+example_pg_to_pg_incremental:
+  schedule:
+    enabled: true
+  resources:
+    cpu: "500m"
+    memory: "1Gi"

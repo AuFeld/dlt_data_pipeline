@@ -28,6 +28,9 @@ log = logging.getLogger(__name__)
 _PIPELINES_DIR = Path(__file__).resolve().parent.parent / "pipelines"
 
 try:
+    # Env name resolves via $DLT_ENV (set per Airflow deployment) and falls
+    # back to "dev" inside the loader. Same DAG IDs across envs — each env
+    # is a separate Airflow deployment (Segment 13).
     _configs = load_pipelines(_PIPELINES_DIR)
 except ConfigError as e:
     log.error("pipeline config errors:\n%s", e)

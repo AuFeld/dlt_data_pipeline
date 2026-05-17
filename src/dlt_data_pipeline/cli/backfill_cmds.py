@@ -33,6 +33,7 @@ def run_backfill_pipeline(
     start: datetime,
     end: datetime,
     pipelines_root: str | Path = "pipelines",
+    env: str | None = None,
 ) -> dict[str, object]:
     """Drive ``pipeline_factory.run_backfill`` and return a structured report.
 
@@ -46,7 +47,9 @@ def run_backfill_pipeline(
         }
     """
     try:
-        infos = pipeline_factory.run_backfill(name, start, end, pipelines_root=pipelines_root)
+        infos = pipeline_factory.run_backfill(
+            name, start, end, pipelines_root=pipelines_root, env=env
+        )
     except (ValueError, KeyError, ConfigError) as exc:
         return {
             "status": "error",
@@ -74,7 +77,7 @@ def cmd_run_backfill(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    report = run_backfill_pipeline(args.name, start, end, args.pipelines_root)
+    report = run_backfill_pipeline(args.name, start, end, args.pipelines_root, env=args.env)
     if report["status"] == "error":
         for err in report["errors"]:  # type: ignore[attr-defined]
             print(err, file=sys.stderr)

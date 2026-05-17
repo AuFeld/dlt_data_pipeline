@@ -1,9 +1,10 @@
-from .loader import ConfigError, load_pipelines
+from .loader import ConfigError, load_pipelines, resolve_env
 from .models import (
     DestinationConfig,
     DestinationType,
     OptionsConfig,
     PipelineConfig,
+    PipelineOverlay,
     ScheduleConfig,
     SchemaContract,
     SourceConfig,
@@ -22,6 +23,7 @@ __all__ = [
     "DestinationType",
     "OptionsConfig",
     "PipelineConfig",
+    "PipelineOverlay",
     "ScheduleConfig",
     "SchemaContract",
     "SourceConfig",
@@ -33,4 +35,5 @@ __all__ = [
     "SyncMode",
     "WriteDisposition",
     "load_pipelines",
+    "resolve_env",
 ]

@@ -197,6 +197,47 @@ class AlertsConfig(_StrictModel):
     on_sla_miss: bool = True
 
 
+class _SourceOverlay(_StrictModel):
+    """Source fields allowed to differ per environment (Segment 13)."""
+
+    connection: str | None = None
+
+
+class _DestinationOverlay(_StrictModel):
+    """Destination fields allowed to differ per environment (Segment 13).
+
+    ``type`` + ``dataset`` are overlay-able so a pipeline can target duckdb
+    in dev and snowflake in prod (per the segment done-when). Source
+    overlays remain ``connection``-only — swapping source types is a
+    different pipeline.
+    """
+
+    type: DestinationType | None = None
+    connection: str | None = None
+    dataset: str | None = None
+
+
+class _ScheduleOverlay(_StrictModel):
+    """Schedule fields allowed to differ per environment (Segment 13)."""
+
+    enabled: bool | None = None
+
+
+class PipelineOverlay(_StrictModel):
+    """Environment-specific override block for a single pipeline (Segment 13).
+
+    Lives inside ``pipelines/_env/<env>.yml`` keyed by pipeline name. Scope is
+    deliberately narrow — only the four fields most operators need to re-map
+    across envs. ``extra="forbid"`` rejects out-of-scope keys with a clear
+    error; expanding the scope requires editing this model.
+    """
+
+    source: _SourceOverlay | None = None
+    destination: _DestinationOverlay | None = None
+    schedule: _ScheduleOverlay | None = None
+    resources: ResourcesConfig | None = None
+
+
 class PipelineConfig(_StrictModel):
     name: str
     source: SourceConfig

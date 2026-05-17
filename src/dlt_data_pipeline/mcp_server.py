@@ -42,25 +42,50 @@ def sources_describe(source_type: str) -> dict[str, object]:
 def pipelines_validate(
     pipelines_root: str = "pipelines",
     name: str | None = None,
+    env: str | None = None,
 ) -> dict[str, object]:
     """Parse + validate one or all ``pipelines/*.yml``.
 
-    Returns ``{status, pipelines_root, errors[], pipelines[]}``. ``status`` is
-    ``"ok"`` or ``"error"``. When ``name`` is provided, validates only that
-    pipeline.
+    Returns ``{status, pipelines_root, env, errors[], pipelines[]}``.
+    ``status`` is ``"ok"`` or ``"error"``. When ``name`` is provided,
+    validates only that pipeline. ``env`` selects which
+    ``pipelines/_env/<env>.yml`` overlay applies; defaults to ``$DLT_ENV``
+    then ``"dev"``.
     """
-    return pipelines_cmds.validate_pipelines(pipelines_root, name)
+    return pipelines_cmds.validate_pipelines(pipelines_root, name, env=env)
 
 
 @mcp.tool
-def pipelines_doctor(pipelines_root: str = "pipelines") -> dict[str, object]:
+def pipelines_doctor(
+    pipelines_root: str = "pipelines",
+    env: str | None = None,
+) -> dict[str, object]:
     """Probe expected env vars + .dlt secrets for each pipeline. Never echoes secret values.
 
-    Returns ``{status, pipelines_root, errors[], report[]}`` where each report
-    entry has ``{name, status, slots: [{slot, type, connection, env_var, status}, ...]}``.
-    ``status`` is ``"ok"``, ``"missing"``, or ``"error"``.
+    Returns ``{status, pipelines_root, env, errors[], report[]}`` where each
+    report entry has ``{name, status, slots: [{slot, type, connection,
+    env_var, status}, ...]}``. ``status`` is ``"ok"``, ``"missing"``, or
+    ``"error"``. ``env`` selects which ``pipelines/_env/<env>.yml`` overlay
+    applies; defaults to ``$DLT_ENV`` then ``"dev"``.
     """
-    return pipelines_cmds.doctor_pipelines(pipelines_root)
+    return pipelines_cmds.doctor_pipelines(pipelines_root, env=env)
+
+
+@mcp.tool
+def pipelines_promote(
+    name: str,
+    from_env: str,
+    to_env: str,
+    pipelines_root: str = "pipelines",
+) -> dict[str, object]:
+    """Diff merged config across two envs for one pipeline (Segment 13).
+
+    Returns ``{status, name, from_env, to_env, changes[], errors[]}``.
+    ``status`` is ``"ok"``, ``"not-found"``, or ``"error"``. Each change
+    entry is ``{field, from, to}`` over overlay-eligible field paths.
+    Informational — never edits files.
+    """
+    return pipelines_cmds.promote_pipelines(name, from_env, to_env, pipelines_root)
 
 
 def main() -> None:
