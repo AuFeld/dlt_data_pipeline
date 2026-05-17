@@ -24,6 +24,12 @@ from data_pipeline_template.config.models import DestinationConfig, DestinationT
 _DUCKDB_DIR_ENV = "DATA_PIPELINE_DUCKDB_DIR"
 _DEFAULT_DUCKDB_DIR = Path(__file__).resolve().parents[3] / ".dlt"
 
+_DATABRICKS_DEFERRED_MSG = (
+    "destination type 'databricks' is not in active use: current architecture loads "
+    "Snowflake and Databricks consumes from Snowflake via its External Data connection. "
+    "Open an issue if a direct dlt -> Databricks load becomes a requirement."
+)
+
 
 def _duckdb_dir() -> Path:
     override = os.environ.get(_DUCKDB_DIR_ENV)
@@ -34,6 +40,21 @@ def _resolve_duckdb_path(connection: str) -> str:
     target = _duckdb_dir()
     target.mkdir(parents=True, exist_ok=True)
     return str(target / f"{connection}.duckdb")
+
+
+def _build_snowflake(connection: str) -> Destination[Any, Any]:
+    try:
+        from dlt.destinations import snowflake
+    except ImportError as exc:
+        raise RuntimeError(
+            "Snowflake destination requires the optional 'snowflake' extra. "
+            "Install with: uv sync --extra snowflake "
+            "(or: pip install 'data-pipeline-template[snowflake]')."
+        ) from exc
+    return cast(
+        Destination[Any, Any],
+        snowflake(destination_name=connection),
+    )
 
 
 def build_destination(cfg: DestinationConfig) -> Destination[Any, Any]:
@@ -48,6 +69,8 @@ def build_destination(cfg: DestinationConfig) -> Destination[Any, Any]:
             Destination[Any, Any],
             postgres(destination_name=cfg.connection),
         )
-    if cfg.type in (DestinationType.snowflake, DestinationType.databricks):
-        raise NotImplementedError(f"destination type {cfg.type.value!r} lands in Segment 8")
+    if cfg.type == DestinationType.snowflake:
+        return _build_snowflake(cfg.connection)
+    if cfg.type == DestinationType.databricks:
+        raise NotImplementedError(_DATABRICKS_DEFERRED_MSG)
     raise ValueError(f"unhandled destination type: {cfg.type!r}")

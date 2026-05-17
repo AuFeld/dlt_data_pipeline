@@ -160,14 +160,22 @@ auto-wired into generated cdc DAGs — alerting routing lands in Segment 9.
   reports the per-source allowed / required keys instead — consult it
   before authoring a new pipeline. Typed per-source sub-models are
   deferred (see plan, post-v1).
-- `filesystem` source builder is a stub until Segment 8. Its metadata is
-  registered but `python -m data_pipeline_template run` on a pipeline that
-  uses it will raise `NotImplementedError`.
+- `filesystem` source supports local + remote (S3/GCS/Azure) reads of
+  CSV/Parquet/JSONL. Required `source.config.bucket_url`; optional
+  `file_glob`, `format`, `table_name`, `reader_kwargs`, `files_per_page`,
+  `extract_content`. Local `file://` paths need no credentials; remote
+  buckets resolve from `SOURCES__FILESYSTEM__<CONN>__CREDENTIALS`.
+- `databricks` destination is **not in active use**. Current architecture
+  loads Snowflake; Databricks consumes from Snowflake via its External
+  Data connection. Any pipeline with `destination.type: databricks` will
+  fail at `build()` with a deferral message. Open an issue if direct
+  dlt → Databricks loads become a requirement.
 - **DDL during CDC streaming:** the vendored `pg_replication` halts on
   incompatible schema changes mid-stream. Recovery is a one-shot run with
   `source.config.reset: true` after the schema migration lands.
-- **Multi-table publications:** each pipeline owns its own
-  `publication_name`; sharing publications across pipelines is unsupported.
+- **Multi-table publications:** each pipeline owns its own `slot_name` AND
+  `publication_name`; sharing either across pipelines is unsupported. Two
+  pipelines pointed at the same slot will fight over WAL position.
 - **CDC alerting:** the slot-lag sensor exists but routes nowhere — it
   fails the sensor task on breach. Slack / email routing lands in
   Segment 9.

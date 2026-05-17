@@ -114,6 +114,25 @@ def _doctor_slot(
     }
 
 
+_LOCAL_FS_SCHEMES: frozenset[str] = frozenset({"", "file"})
+
+
+def _filesystem_needs_creds(cfg: PipelineConfig) -> bool:
+    """Filesystem source only needs credentials for remote buckets.
+
+    Local ``file://`` URLs and absolute paths (empty scheme) are read off
+    the local FS by ``fsspec`` without any credential resolution. Treating
+    those as MISSING in ``doctor`` would produce noisy false positives.
+    """
+    if cfg.source.type != "filesystem":
+        return True
+    from urllib.parse import urlparse
+
+    bucket_url = cfg.source.config.get("bucket_url", "")
+    scheme = urlparse(str(bucket_url)).scheme.lower()
+    return scheme not in _LOCAL_FS_SCHEMES
+
+
 def _doctor_one(name: str, cfg: PipelineConfig) -> dict[str, object]:
     slots: list[dict[str, str | None]] = []
 
@@ -121,6 +140,8 @@ def _doctor_one(name: str, cfg: PipelineConfig) -> dict[str, object]:
         src_meta = registry.get_metadata(cfg.source.type)
         src_env = src_meta.resolve_env_var(cfg.source.connection)
     except registry.MissingSourceMetadataError:
+        src_env = None
+    if not _filesystem_needs_creds(cfg):
         src_env = None
     slots.append(_doctor_slot("source", cfg.source.type, cfg.source.connection, src_env))
 

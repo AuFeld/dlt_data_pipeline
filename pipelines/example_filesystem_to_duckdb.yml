@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=./_schema.json
+name: example_filesystem_to_duckdb
+source:
+  type: filesystem
+  connection: local_fixtures
+  config:
+    bucket_url: file://./tests/fixtures/files/
+    file_glob: orders.csv
+    format: csv
+    table_name: orders
+sync:
+  mode: full_refresh
+destination:
+  type: duckdb
+  connection: local_duckdb
+  dataset: raw_files
+schedule:
+  cron: "0 6 * * *"
+  enabled: false
+options:
+  write_disposition: replace

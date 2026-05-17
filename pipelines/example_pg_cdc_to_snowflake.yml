@@ -4,8 +4,8 @@ source:
   type: pg_cdc
   connection: pg_source
   config:
-    slot_name: dlt_orders_slot
-    publication_name: dlt_orders_pub
+    slot_name: dlt_orders_snowflake_slot
+    publication_name: dlt_orders_snowflake_pub
     schema: public
     tables:
       - orders
