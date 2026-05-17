@@ -12,7 +12,7 @@
 #   docker compose -f docker/docker-compose.yml up -d --force-recreate \
 #     --no-deps airflow-scheduler airflow-webserver airflow-triggerer
 
-name: dlt_data_pipeline
+name: dlt-data-pipeline
 
 x-airflow-common: &airflow-common
   build:
