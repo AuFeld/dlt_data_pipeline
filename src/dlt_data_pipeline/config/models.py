@@ -11,6 +11,7 @@ import re
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
+import isodate
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -76,10 +77,63 @@ SourceConfig = Annotated[
 ]
 
 
+class BackfillConfig(_StrictModel):
+    """Chunked, resumable historical load knobs (Segment 12).
+
+    ``chunk_size`` is an ISO-8601 duration string parsed by ``isodate``
+    (e.g. ``P1D`` = one day, ``PT6H`` = six hours). ``partition_field``
+    defaults to ``sync.cursor_field`` when omitted.
+    """
+
+    chunk_size: str
+    partition_field: str | None = None
+
+    @field_validator("chunk_size")
+    @classmethod
+    def _iso8601_duration(cls, v: str) -> str:
+        try:
+            isodate.parse_duration(v)
+        except (isodate.ISO8601Error, ValueError) as exc:
+            raise ValueError(f"chunk_size must be an ISO-8601 duration: {exc}") from exc
+        return v
+
+
+class QualityCheckMode(StrEnum):
+    same_cluster = "same_cluster"
+    cross_cluster = "cross_cluster"
+
+
+class QualityConfig(_StrictModel):
+    """Data-quality knobs (Segment 12, v1 scope).
+
+    ``row_count_check`` runs source-vs-destination reconciliation per replicated
+    table. ``check_mode`` selects whether to use one SQL connection that can
+    reach both (``same_cluster``) or two PythonOperator-driven probes
+    (``cross_cluster``, default — no Airflow Connection wiring required).
+    """
+
+    row_count_check: bool = False
+    check_mode: QualityCheckMode = QualityCheckMode.cross_cluster
+
+
 class SyncConfig(_StrictModel):
     mode: SyncMode
     cursor_field: str | None = None
     primary_key: str | list[str] | None = None
+    tolerance_seconds: int = Field(default=0, ge=0, le=86400)
+    lookback: str | None = None
+    backfill: BackfillConfig | None = None
+
+    @field_validator("lookback")
+    @classmethod
+    def _lookback_iso8601(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        try:
+            isodate.parse_duration(v)
+        except (isodate.ISO8601Error, ValueError) as exc:
+            raise ValueError(f"lookback must be an ISO-8601 duration: {exc}") from exc
+        return v
 
 
 class DestinationConfig(_StrictModel):
@@ -152,6 +206,7 @@ class PipelineConfig(_StrictModel):
     options: OptionsConfig = Field(default_factory=OptionsConfig)
     resources: ResourcesConfig = Field(default_factory=ResourcesConfig)
     alerts: AlertsConfig = Field(default_factory=AlertsConfig)
+    quality: QualityConfig = Field(default_factory=QualityConfig)
 
     @field_validator("name")
     @classmethod
@@ -182,4 +237,23 @@ class PipelineConfig(_StrictModel):
             raise ValueError(
                 "sync.primary_key is required when options.write_disposition == 'merge'"
             )
+        if self.sync.backfill is not None and mode != SyncMode.incremental:
+            raise ValueError(
+                "sync.backfill requires sync.mode == 'incremental' "
+                "(full_refresh and cdc don't bound by cursor)"
+            )
+        if self.sync.tolerance_seconds > 0 and self.sync.cursor_field is None:
+            raise ValueError("sync.tolerance_seconds requires sync.cursor_field")
+        if self.sync.lookback is not None and self.sync.cursor_field is None:
+            raise ValueError("sync.lookback requires sync.cursor_field")
+        if self.quality.row_count_check:
+            if self.source.type not in ("sql_database", "pg_cdc"):
+                raise ValueError(
+                    "quality.row_count_check requires source.type in {'sql_database', 'pg_cdc'}"
+                )
+            if self.destination.type == DestinationType.databricks:
+                raise ValueError(
+                    "quality.row_count_check is not supported for databricks "
+                    "destination (deferred per Segment 8)"
+                )
         return self

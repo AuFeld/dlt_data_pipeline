@@ -57,6 +57,33 @@
       "title": "AlertsConfig",
       "type": "object"
     },
+    "BackfillConfig": {
+      "additionalProperties": false,
+      "description": "Chunked, resumable historical load knobs (Segment 12).\n\n``chunk_size`` is an ISO-8601 duration string parsed by ``isodate``\n(e.g. ``P1D`` = one day, ``PT6H`` = six hours). ``partition_field``\ndefaults to ``sync.cursor_field`` when omitted.",
+      "properties": {
+        "chunk_size": {
+          "title": "Chunk Size",
+          "type": "string"
+        },
+        "partition_field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Partition Field"
+        }
+      },
+      "required": [
+        "chunk_size"
+      ],
+      "title": "BackfillConfig",
+      "type": "object"
+    },
     "DestinationConfig": {
       "additionalProperties": false,
       "properties": {
@@ -103,6 +130,31 @@
         }
       },
       "title": "OptionsConfig",
+      "type": "object"
+    },
+    "QualityCheckMode": {
+      "enum": [
+        "same_cluster",
+        "cross_cluster"
+      ],
+      "title": "QualityCheckMode",
+      "type": "string"
+    },
+    "QualityConfig": {
+      "additionalProperties": false,
+      "description": "Data-quality knobs (Segment 12, v1 scope).\n\n``row_count_check`` runs source-vs-destination reconciliation per replicated\ntable. ``check_mode`` selects whether to use one SQL connection that can\nreach both (``same_cluster``) or two PythonOperator-driven probes\n(``cross_cluster``, default \u2014 no Airflow Connection wiring required).",
+      "properties": {
+        "check_mode": {
+          "$ref": "#/$defs/QualityCheckMode",
+          "default": "cross_cluster"
+        },
+        "row_count_check": {
+          "default": false,
+          "title": "Row Count Check",
+          "type": "boolean"
+        }
+      },
+      "title": "QualityConfig",
       "type": "object"
     },
     "ResourcesConfig": {
@@ -268,6 +320,17 @@
     "SyncConfig": {
       "additionalProperties": false,
       "properties": {
+        "backfill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BackfillConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "cursor_field": {
           "anyOf": [
             {
@@ -279,6 +342,18 @@
           ],
           "default": null,
           "title": "Cursor Field"
+        },
+        "lookback": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lookback"
         },
         "mode": {
           "$ref": "#/$defs/SyncMode"
@@ -300,6 +375,13 @@
           ],
           "default": null,
           "title": "Primary Key"
+        },
+        "tolerance_seconds": {
+          "default": 0,
+          "maximum": 86400,
+          "minimum": 0,
+          "title": "Tolerance Seconds",
+          "type": "integer"
         }
       },
       "required": [
@@ -341,6 +423,9 @@
     },
     "options": {
       "$ref": "#/$defs/OptionsConfig"
+    },
+    "quality": {
+      "$ref": "#/$defs/QualityConfig"
     },
     "resources": {
       "$ref": "#/$defs/ResourcesConfig"

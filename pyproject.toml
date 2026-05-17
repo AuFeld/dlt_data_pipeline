@@ -25,6 +25,8 @@ dependencies = [
   # the format-specific deps explicitly so the source works out of the box.
   "pandas>=2.0",
   "pyarrow>=15",
+  "isodate>=0.7.2",
+  "apache-airflow-providers-common-sql>=1.11",
 ]
 
 [project.optional-dependencies]

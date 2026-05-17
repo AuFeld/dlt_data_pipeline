@@ -39,6 +39,7 @@ from dlt_data_pipeline.airflow.callbacks import (
     make_sla_miss_callback,
     schema_change_probe,
 )
+from dlt_data_pipeline.airflow.quality import build_row_count_tasks
 from dlt_data_pipeline.config.models import PipelineConfig, ResourcesConfig
 from dlt_data_pipeline.pipeline_factory import build as build_pipeline
 
@@ -152,9 +153,19 @@ def build_dag(cfg: PipelineConfig) -> DAG:
             )
             trailing.append(emit_dataset)
 
+            # Row-count reconciliation tasks fan out in parallel after
+            # emit_dataset (one per replicated table). They're a quality gate,
+            # not part of the dataset-event chain — running them after the
+            # outlet keeps downstream-dataset scheduling unblocked by check
+            # latency.
+            row_count_tasks = build_row_count_tasks(cfg, task_kwargs)
+
             for idx, t in enumerate(trailing):
                 upstream = leaves if idx == 0 else [trailing[idx - 1]]
                 for up in upstream:
                     up >> t
+
+            for rc in row_count_tasks:
+                emit_dataset >> rc
 
     return dag

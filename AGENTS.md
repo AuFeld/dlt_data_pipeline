@@ -101,6 +101,94 @@ destination metadata, then probes `os.environ` and `dlt.secrets`. Reports
 one of `env / secrets-toml / no-creds-required / MISSING` per slot. Exit
 non-zero if any pipeline has `MISSING` rows.
 
+## Backfill an incremental pipeline (Segment 12)
+
+```
+python -m dlt_data_pipeline run-backfill <name> \
+    --start 2025-01-01T00:00:00Z --end 2025-02-01T00:00:00Z
+```
+
+Drives a chunked, resumable historical load over `[start, end)` for any
+`sync.mode == incremental` pipeline that declares `sync.backfill`:
+
+```yaml
+sync:
+  mode: incremental
+  cursor_field: updated_at
+  primary_key: id
+  backfill:
+    chunk_size: P7D            # ISO-8601 duration; chunks are 7 days
+    partition_field: updated_at  # optional; defaults to cursor_field
+```
+
+Each chunk runs as an isolated `pipeline.run()` so dlt's state file
+short-circuits cursor lookup (bounded `initial_value` + `end_value` on
+the incremental hint). If the run dies mid-backfill, re-invoke with
+`--start` matching the last completed chunk boundary.
+
+Incremental late-arrival knobs (also Segment 12, orthogonal to backfill):
+
+```yaml
+sync:
+  tolerance_seconds: 30        # cursor-lag in seconds (dlt Incremental.lag)
+  lookback: PT1H               # ISO-8601 duration; composes with tolerance
+```
+
+## Tear down a pipeline (Segment 12)
+
+```
+python -m dlt_data_pipeline pipelines delete <name> --yes
+python -m dlt_data_pipeline pipelines delete <name> --yes --keep-data
+```
+
+Without `--yes` prints the dry-run plan and exits 0 (CI-safe; no
+interactive prompt). With `--yes`, idempotently:
+
+1. (`pg_cdc` only) drops the replication slot + publication on the source.
+2. Unless `--keep-data`: `DROP SCHEMA IF EXISTS <dataset> CASCADE` on
+   the destination via dlt's `sql_client`.
+3. Wipes local `.dlt/pipelines/<name>/` via `pipeline.drop()`.
+4. Unlinks `pipelines/<name>.yml`.
+
+Each step captures its own error; the full report prints at the end. The
+Airflow DagBag scan removes the DAG from the UI on next re-parse (no
+Airflow API call from the CLI). Replaces the manual
+`SELECT pg_drop_replication_slot(...);` + `DROP PUBLICATION ...;` flow
+called out under "CDC operations" below for the CDC case.
+
+## Row-count reconciliation (Segment 12)
+
+Opt-in per pipeline:
+
+```yaml
+quality:
+  row_count_check: true
+  check_mode: cross_cluster    # default; uses PythonOperator with two engines
+  # check_mode: same_cluster   # uses SQLCheckOperator on conn_id dlt_<dest.connection>
+```
+
+Generates one task per replicated table appended after `emit_dataset`. The
+`cross_cluster` default needs no Airflow Connection — it opens source +
+destination engines via `dlt.secrets` keyed by the YAML's logical
+connection names. `same_cluster` is cheaper but requires an Airflow
+Connection named `dlt_<destination.connection>` that can reach both
+schemas.
+
+## Secret-scrubbing log filter (Segment 12)
+
+`src/dlt_data_pipeline/observability/log_filter.py` installs a
+`logging.Filter` on root + `dlt` + `airflow` + `airflow.task` loggers that
+rewrites `password=…`, `token=…`, and URI userinfo to `***`. Installed
+at two entry points so no execution path bypasses it:
+
+- `dags/data_pipeline_dags.py` import — covers scheduler + worker pod
+  DagBag parse.
+- `src/dlt_data_pipeline/__main__.py:main` — covers CLI runs
+  (including KubernetesExecutor per-task pods that exec the CLI).
+
+Idempotent — repeat calls are no-ops via an `isinstance` check on
+`logger.filters`.
+
 ## Orchestrator-agnostic boundary
 
 `pipeline_factory.py` and everything under `sources/`, `destinations/`,
@@ -158,10 +246,12 @@ Slot + publication lifecycle:
 - Set `source.config.reset: true` in YAML for a one-shot run to drop +
   recreate the slot + publication. Use after an incompatible DDL change
   (see "DDL during streaming" under known limitations).
-- Deleting a pipeline YAML does NOT clean up the slot or publication —
-  manual `SELECT pg_drop_replication_slot('…');` + `DROP PUBLICATION …;`
-  required. A paused pipeline keeps the slot open and retains WAL on the
-  source, eventually filling disk. Monitor.
+- Deleting a pipeline YAML directly does NOT clean up the slot or
+  publication. Use `python -m dlt_data_pipeline pipelines delete <name>
+  --yes` (Segment 12) — it idempotently drops slot, publication,
+  destination dataset, local state, and the YAML in one shot. A paused
+  pipeline still keeps the slot open and retains WAL on the source,
+  eventually filling disk. Monitor.
 
 `options.write_disposition` for cdc: the factory silent-promotes the default
 `append` → `merge`. `merge` / `replace` pass through unchanged.
