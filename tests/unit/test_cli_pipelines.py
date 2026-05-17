@@ -114,6 +114,7 @@ def test_doctor_missing_credentials_exit_1(
     """Pipeline needing pg_source creds — unset env, expect MISSING + exit 1."""
     monkeypatch.delenv(_PG_SOURCE_ENV, raising=False)
     monkeypatch.delenv(_PG_DEST_ENV, raising=False)
+    monkeypatch.delenv("AIRFLOW__SECRETS__BACKEND", raising=False)
     # Block dlt.secrets fallback to .dlt/secrets.toml by pointing dlt at an
     # empty config dir for the duration of this test.
     monkeypatch.setenv("DLT_PROJECT_DIR", str(tmp_path))
@@ -125,3 +126,84 @@ def test_doctor_missing_credentials_exit_1(
     out = capsys.readouterr().out
     assert "example_pg_to_pg_incremental: MISSING" in out
     assert _PG_SOURCE_ENV in out
+
+
+def test_doctor_env_flag_reports_overlaid_destination(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--env prod` applies pipelines/_env/prod.yml — destination env-var
+    changes to match the overlaid connection name."""
+    base = """\
+name: alpha
+source:
+  type: rest_api
+  connection: demo_api
+  config:
+    base_url: https://example.com/
+sync:
+  mode: full_refresh
+destination:
+  type: duckdb
+  connection: local_duckdb
+  dataset: raw_alpha
+schedule:
+  cron: "0 6 * * *"
+"""
+    (tmp_path / "alpha.yml").write_text(base)
+    (tmp_path / "_env").mkdir()
+    (tmp_path / "_env" / "prod.yml").write_text(
+        "alpha:\n"
+        "  destination:\n"
+        "    type: postgres\n"
+        "    connection: prod_warehouse\n"
+        "    dataset: prod_raw_alpha\n"
+    )
+    # No env vars set for either dev or prod connections.
+    monkeypatch.delenv("DESTINATION__LOCAL_DUCKDB__CREDENTIALS", raising=False)
+    monkeypatch.delenv("DESTINATION__PROD_WAREHOUSE__CREDENTIALS", raising=False)
+    monkeypatch.delenv("AIRFLOW__SECRETS__BACKEND", raising=False)
+    monkeypatch.setenv("DLT_PROJECT_DIR", str(tmp_path))
+    monkeypatch.setenv("DLT_DATA_DIR", str(tmp_path / "data"))
+
+    rc = main(
+        [
+            "pipelines",
+            "doctor",
+            "--env",
+            "prod",
+            "--pipelines-root",
+            str(tmp_path),
+        ]
+    )
+    out = capsys.readouterr().out
+    # Postgres destination needs creds; doctor reports the prod env var.
+    assert "DESTINATION__PROD_WAREHOUSE__CREDENTIALS" in out
+    assert "DESTINATION__LOCAL_DUCKDB__CREDENTIALS" not in out
+    # Exit 1 because the prod env var is unset.
+    assert rc == 1
+
+
+def test_doctor_airflow_backend_status(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """AIRFLOW__SECRETS__BACKEND set + no env / secrets.toml -> airflow-backend."""
+    monkeypatch.delenv(_PG_SOURCE_ENV, raising=False)
+    monkeypatch.delenv(_PG_DEST_ENV, raising=False)
+    monkeypatch.setenv(
+        "AIRFLOW__SECRETS__BACKEND",
+        "airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend",
+    )
+    monkeypatch.setenv("DLT_PROJECT_DIR", str(tmp_path))
+    monkeypatch.setenv("DLT_DATA_DIR", str(tmp_path / "data"))
+
+    pipelines_root = Path(__file__).resolve().parents[2] / "pipelines"
+    rc = main(["pipelines", "doctor", "--pipelines-root", str(pipelines_root)])
+    out = capsys.readouterr().out
+    # No MISSING status — airflow-backend trumps it.
+    assert "MISSING" not in out
+    assert "airflow-backend" in out
+    assert rc == 0

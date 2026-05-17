@@ -28,7 +28,7 @@ def _call(tool: str, args: dict[str, object] | None = None) -> object:
     return sc
 
 
-def test_server_registers_four_tools() -> None:
+def test_server_registers_expected_tools() -> None:
     tools = asyncio.run(mcp.list_tools())
     names = {t.name for t in tools}
     assert names == {
@@ -36,6 +36,7 @@ def test_server_registers_four_tools() -> None:
         "sources_describe",
         "pipelines_validate",
         "pipelines_doctor",
+        "pipelines_promote",
     }
 
 
@@ -91,6 +92,7 @@ def test_pipelines_doctor_tool_structure() -> None:
             assert slot["status"] in (
                 "env",
                 "secrets-toml",
+                "airflow-backend",
                 "no-creds-required",
                 "MISSING",
             )

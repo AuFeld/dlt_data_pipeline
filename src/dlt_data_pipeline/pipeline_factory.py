@@ -136,14 +136,19 @@ def build(cfg: PipelineConfig) -> RunnablePipeline:
     )
 
 
-def _load_one(name: str, pipelines_root: Path | str) -> PipelineConfig:
+def _load_one(
+    name: str,
+    pipelines_root: Path | str,
+    env: str | None = None,
+) -> PipelineConfig:
     """Load + validate every YAML, return the single config matching ``name``.
 
     Raises ``KeyError`` with an ``available: [...]`` suggestion list on miss.
     Shared by ``_resolve`` (single-shot runs) and ``run_backfill`` (multi-chunk
-    runs that need to rebuild between chunks without re-globbing).
+    runs that need to rebuild between chunks without re-globbing). ``env``
+    defaults to ``$DLT_ENV`` then ``"dev"`` via the loader.
     """
-    configs = load_pipelines(pipelines_root)
+    configs = load_pipelines(pipelines_root, env=env)
     try:
         return configs[name]
     except KeyError:
@@ -153,16 +158,21 @@ def _load_one(name: str, pipelines_root: Path | str) -> PipelineConfig:
         ) from None
 
 
-def _resolve(name: str, pipelines_root: Path | str) -> RunnablePipeline:
-    return build(_load_one(name, pipelines_root))
+def _resolve(
+    name: str,
+    pipelines_root: Path | str,
+    env: str | None = None,
+) -> RunnablePipeline:
+    return build(_load_one(name, pipelines_root, env=env))
 
 
 def run(
     name: str,
     pipelines_root: Path | str = Path("pipelines"),
     limit: int | None = None,
+    env: str | None = None,
 ) -> LoadInfo:
-    runnable = _resolve(name, pipelines_root)
+    runnable = _resolve(name, pipelines_root, env=env)
     if limit is not None:
         runnable.source.add_limit(limit)
     return runnable.pipeline.run(
@@ -176,6 +186,7 @@ def run_backfill(
     start: datetime,
     end: datetime,
     pipelines_root: Path | str = Path("pipelines"),
+    env: str | None = None,
 ) -> list[LoadInfo]:
     """Chunked, resumable historical load over ``[start, end)``.
 
@@ -186,7 +197,7 @@ def run_backfill(
     """
     if start >= end:
         raise ValueError(f"run_backfill: start {start!r} must precede end {end!r}")
-    cfg = _load_one(name, pipelines_root)
+    cfg = _load_one(name, pipelines_root, env=env)
     if cfg.sync.mode != SyncMode.incremental:
         raise ValueError(
             f"run_backfill: pipeline {name!r} sync.mode is {cfg.sync.mode.value!r}; "
@@ -223,6 +234,7 @@ def run_dry(
     name: str,
     pipelines_root: Path | str = Path("pipelines"),
     limit: int | None = None,
+    env: str | None = None,
 ) -> dict[str, str]:
     """Extract + normalize only — skip destination load.
 
@@ -231,7 +243,7 @@ def run_dry(
     ``build()``, so dry-run won't help with stubbed destinations until
     Segment 8 fills them in.
     """
-    runnable = _resolve(name, pipelines_root)
+    runnable = _resolve(name, pipelines_root, env=env)
     if limit is not None:
         runnable.source.add_limit(limit)
     extract_info = runnable.pipeline.extract(runnable.source)

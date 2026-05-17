@@ -9,6 +9,10 @@ Subcommands:
   pipelines validate [name]   — parse + validate one or all pipelines/*.yml.
   pipelines doctor            — probe expected env vars / .dlt secrets per pipeline.
   pipelines delete <name>     — tear down CDC slot, dataset, state, YAML (Segment 12).
+  pipelines promote <name>    — diff merged config across two envs (Segment 13).
+
+Every pipelines-reading subcommand accepts ``--env <name>`` (Segment 13);
+defaults to ``$DLT_ENV`` then ``dev`` via ``config.loader.resolve_env``.
 """
 
 from __future__ import annotations
@@ -32,15 +36,32 @@ from dlt_data_pipeline.observability.log_filter import install_secret_scrub
 def _cmd_run(args: argparse.Namespace) -> int:
     if args.no_load:
         result = pipeline_factory.run_dry(
-            args.name, pipelines_root=args.pipelines_root, limit=args.limit
+            args.name,
+            pipelines_root=args.pipelines_root,
+            limit=args.limit,
+            env=args.env,
         )
         print(result)
         return 0
     load_info = pipeline_factory.run(
-        args.name, pipelines_root=args.pipelines_root, limit=args.limit
+        args.name,
+        pipelines_root=args.pipelines_root,
+        limit=args.limit,
+        env=args.env,
     )
     print(load_info)
     return 0
+
+
+def _add_env_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--env",
+        default=None,
+        help=(
+            "Environment name (applies pipelines/_env/<env>.yml overlay). "
+            "Defaults to $DLT_ENV then 'dev'."
+        ),
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -66,6 +87,7 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip destination write: extract + normalize only.",
     )
+    _add_env_arg(run_p)
     run_p.set_defaults(_handler=_cmd_run)
 
     backfill_p = sub.add_parser(
@@ -85,6 +107,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=Path("pipelines"),
         help="Directory containing pipelines/*.yml (default: ./pipelines).",
     )
+    _add_env_arg(backfill_p)
     backfill_p.set_defaults(_handler=backfill_cmds.cmd_run_backfill)
 
     config_p = sub.add_parser("config", help="Config-layer utilities.")
@@ -126,6 +149,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=Path("pipelines"),
         help="Directory containing pipelines/*.yml (default: ./pipelines).",
     )
+    _add_env_arg(validate_p)
     validate_p.set_defaults(_handler=pipelines_cmds.cmd_validate)
     doctor_p = pipelines_sub.add_parser(
         "doctor", help="Probe expected env vars / .dlt secrets per pipeline."
@@ -136,6 +160,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=Path("pipelines"),
         help="Directory containing pipelines/*.yml (default: ./pipelines).",
     )
+    _add_env_arg(doctor_p)
     doctor_p.set_defaults(_handler=pipelines_cmds.cmd_doctor)
 
     delete_p = pipelines_sub.add_parser(
@@ -159,7 +184,33 @@ def _build_parser() -> argparse.ArgumentParser:
         default=Path("pipelines"),
         help="Directory containing pipelines/*.yml (default: ./pipelines).",
     )
+    _add_env_arg(delete_p)
     delete_p.set_defaults(_handler=delete_cmds.cmd_delete)
+
+    promote_p = pipelines_sub.add_parser(
+        "promote",
+        help="Diff merged config across two envs (Segment 13, informational).",
+    )
+    promote_p.add_argument("name", help="Pipeline name to diff.")
+    promote_p.add_argument(
+        "--from",
+        dest="from_env",
+        required=True,
+        help="Source environment (e.g. staging).",
+    )
+    promote_p.add_argument(
+        "--to",
+        dest="to_env",
+        required=True,
+        help="Target environment (e.g. prod).",
+    )
+    promote_p.add_argument(
+        "--pipelines-root",
+        type=Path,
+        default=Path("pipelines"),
+        help="Directory containing pipelines/*.yml (default: ./pipelines).",
+    )
+    promote_p.set_defaults(_handler=pipelines_cmds.cmd_promote)
 
     return parser
 

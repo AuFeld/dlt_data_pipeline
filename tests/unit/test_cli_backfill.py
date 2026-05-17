@@ -23,8 +23,22 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 def stub_run_backfill(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     calls: list[dict[str, Any]] = []
 
-    def _stub(name: str, start: datetime, end: datetime, pipelines_root: Path | str = "pipelines"):
-        calls.append({"name": name, "start": start, "end": end, "pipelines_root": pipelines_root})
+    def _stub(
+        name: str,
+        start: datetime,
+        end: datetime,
+        pipelines_root: Path | str = "pipelines",
+        env: str | None = None,
+    ):
+        calls.append(
+            {
+                "name": name,
+                "start": start,
+                "end": end,
+                "pipelines_root": pipelines_root,
+                "env": env,
+            }
+        )
         # Pretend two chunks landed.
         return [object(), object()]
 

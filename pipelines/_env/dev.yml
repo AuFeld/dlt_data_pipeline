@@ -1,0 +1,14 @@
+# Per-environment overlay (Segment 13). Loaded when DLT_ENV=dev (default).
+#
+# Schema: pipelines/_env/<env>.yml is a single file per env, keyed by pipeline
+# name. Each block validates against PipelineOverlay (config/models.py) —
+# extra fields are rejected at load time. Allowed scope:
+#   source.connection
+#   destination.{type,connection,dataset}
+#   schedule.enabled
+#   resources.{cpu,memory}
+#
+# This file is intentionally near-empty: dev defaults already live in each
+# base pipelines/*.yml. Listed below for documentation only.
+
+example_rest_to_duckdb: {}

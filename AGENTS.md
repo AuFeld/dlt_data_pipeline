@@ -8,10 +8,11 @@ for assistants working in the repo (Claude Code, Codex, Cursor, etc.).
 ## MCP server
 
 A project-local MCP server is registered in [`.mcp.json`](.mcp.json) and
-exposes the four introspection subcommands below as native tools:
-`sources_list`, `sources_describe`, `pipelines_validate`, `pipelines_doctor`.
-MCP-aware clients should prefer these over shelling out. The CLI surface
-documented below remains the source of truth and is what the MCP tools wrap.
+exposes the introspection subcommands below as native tools:
+`sources_list`, `sources_describe`, `pipelines_validate`,
+`pipelines_doctor`, `pipelines_promote`. MCP-aware clients should prefer
+these over shelling out. The CLI surface documented below remains the
+source of truth and is what the MCP tools wrap.
 
 ## Where pipelines live
 
@@ -48,10 +49,52 @@ resolves at runtime. Env-var templates:
     `destination_name=connection`, so dlt resolves credentials
     under `destination.<connection>` exclusively.
 
-dlt-native fallback: the same value can live in `.dlt/secrets.toml` under
-`[sources.<type>.<connection>.credentials]` /
-`[destination.<connection>.credentials]`. Local dev: prefer
-`.dlt/secrets.toml` (git-ignored). Containers / CI / k8s: prefer env vars.
+**Resolution precedence** (first hit wins):
+
+1. **Process env var** — the values above. In k8s, mounted from a `Secret`
+   via `envFrom` on the pod template.
+2. **Airflow Secrets Backend** — when `AIRFLOW__SECRETS__BACKEND` is set.
+   `pipelines doctor` reports `airflow-backend` for that slot without
+   calling the backend (avoids an Airflow runtime dependency in the CLI).
+   v2 path; configured via `deploy/k8s/base/airflow-configmap.yaml`.
+3. **`.dlt/secrets.toml`** — dlt's native TOML under
+   `[sources.<type>.<connection>.credentials]` /
+   `[destination.<connection>.credentials]`. Local dev only — git-ignored.
+
+Full design rationale: [`src/dlt_data_pipeline/config/README.md`](src/dlt_data_pipeline/config/README.md).
+
+## Multi-environment overlays (Segment 13)
+
+Re-map a narrow set of fields per environment without editing the base
+YAML. Overlay file: `pipelines/_env/<env>.yml`, keyed by pipeline name.
+
+```yaml
+# pipelines/_env/prod.yml
+example_rest_to_duckdb:
+  destination:
+    type: snowflake
+    connection: snowflake_warehouse
+    dataset: prod_raw_demo
+  resources:
+    cpu: "1000m"
+    memory: "2Gi"
+```
+
+Allowed scope (v1): `source.connection`,
+`destination.{type,connection,dataset}`, `schedule.enabled`,
+`resources.{cpu,memory}`. Out-of-scope keys raise `ConfigError`.
+
+Active env resolves from CLI `--env <name>` > `$DLT_ENV` > `"dev"`. Every
+pipelines-reading CLI subcommand (`run`, `run-backfill`, `pipelines
+validate / doctor / delete`) accepts `--env`. The DAG entrypoint reads
+`$DLT_ENV` directly (one Airflow deployment per env). Diff two envs:
+
+```
+python -m dlt_data_pipeline pipelines promote <name> --from dev --to prod
+```
+
+Informational only — never edits files. Full spec:
+[`src/dlt_data_pipeline/config/README.md`](src/dlt_data_pipeline/config/README.md).
 
 ## Validate without running
 
