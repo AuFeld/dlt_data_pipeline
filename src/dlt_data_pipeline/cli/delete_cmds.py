@@ -17,13 +17,16 @@ sees every failure, not just the first one.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
-from dlt_data_pipeline import pipeline_factory
+import dlt
+
 from dlt_data_pipeline.config.loader import ConfigError, load_pipelines
 from dlt_data_pipeline.config.models import PipelineConfig
+from dlt_data_pipeline.destinations.factory import build_destination
 
 
 def _drop_cdc_slot_and_publication(cfg: PipelineConfig) -> list[str]:
@@ -71,6 +74,29 @@ def _drop_cdc_slot_and_publication(cfg: PipelineConfig) -> list[str]:
     return errors
 
 
+def _destination_only_pipeline(cfg: PipelineConfig) -> dlt.Pipeline:
+    """Construct a dlt.Pipeline bound to the destination only — no source build.
+
+    ``pipeline_factory.build()`` would call the pg_cdc source builder, which
+    invokes ``init_replication`` and **recreates** the slot/publication we
+    just dropped. Both teardown paths (dataset drop + local state drop) only
+    need the destination side, so skip the source entirely.
+
+    Mirrors the ``pipelines_dir`` env-var dance in ``pipeline_factory.build``
+    so we don't trip dlt's pipelines_dir-vs-DLT_DATA_DIR conflict check.
+    """
+    destination = build_destination(cfg.destination)
+    kwargs: dict[str, Any] = {
+        "pipeline_name": cfg.name,
+        "destination": destination,
+        "dataset_name": cfg.destination.dataset,
+    }
+    if "DLT_DATA_DIR" not in os.environ:
+        kwargs["pipelines_dir"] = str(Path(".dlt") / "pipelines" / cfg.name)
+    pipeline: dlt.Pipeline = dlt.pipeline(**kwargs)
+    return pipeline
+
+
 def _drop_destination_dataset(cfg: PipelineConfig) -> list[str]:
     """``DROP SCHEMA IF EXISTS <dataset> CASCADE`` via dlt's sql_client.
 
@@ -81,12 +107,12 @@ def _drop_destination_dataset(cfg: PipelineConfig) -> list[str]:
     """
     errors: list[str] = []
     try:
-        runnable = pipeline_factory.build(cfg)
+        pipeline = _destination_only_pipeline(cfg)
     except Exception as exc:
         errors.append(f"build pipeline: {exc}")
         return errors
     try:
-        with runnable.pipeline.sql_client() as client:
+        with pipeline.sql_client() as client:
             client.execute_sql(f'DROP SCHEMA IF EXISTS "{cfg.destination.dataset}" CASCADE')
     except Exception as exc:
         errors.append(f"DROP SCHEMA: {exc}")
@@ -96,8 +122,8 @@ def _drop_destination_dataset(cfg: PipelineConfig) -> list[str]:
 def _drop_local_state(cfg: PipelineConfig) -> list[str]:
     errors: list[str] = []
     try:
-        runnable = pipeline_factory.build(cfg)
-        runnable.pipeline.drop()
+        pipeline = _destination_only_pipeline(cfg)
+        pipeline.drop()
     except Exception as exc:
         errors.append(f"pipeline.drop(): {exc}")
     return errors
