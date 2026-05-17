@@ -13,7 +13,7 @@ import duckdb
 import pytest
 import yaml
 
-from data_pipeline_template import pipeline_factory
+from dlt_data_pipeline import pipeline_factory
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures" / "files"
@@ -100,8 +100,8 @@ def test_filesystem_unknown_format_raises(tmp_path: Path) -> None:
     bad_fixtures.mkdir()
     shutil.copy(FIXTURES_DIR / "orders.csv", bad_fixtures / "orders.txt")
 
-    from data_pipeline_template.config.models import SourceFilesystem
-    from data_pipeline_template.sources.filesystem import builder
+    from dlt_data_pipeline.config.models import SourceFilesystem
+    from dlt_data_pipeline.sources.filesystem import builder
 
     cfg = SourceFilesystem(
         type="filesystem",
@@ -113,8 +113,8 @@ def test_filesystem_unknown_format_raises(tmp_path: Path) -> None:
 
 
 def test_filesystem_unknown_config_key_raises() -> None:
-    from data_pipeline_template.config.models import SourceFilesystem
-    from data_pipeline_template.sources.filesystem import builder
+    from dlt_data_pipeline.config.models import SourceFilesystem
+    from dlt_data_pipeline.sources.filesystem import builder
 
     cfg = SourceFilesystem(
         type="filesystem",
@@ -128,8 +128,8 @@ def test_filesystem_unknown_config_key_raises() -> None:
 def test_filesystem_remote_bucket_missing_creds_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from data_pipeline_template.config.models import SourceFilesystem
-    from data_pipeline_template.sources.filesystem import builder
+    from dlt_data_pipeline.config.models import SourceFilesystem
+    from dlt_data_pipeline.sources.filesystem import builder
 
     monkeypatch.delenv("SOURCES__FILESYSTEM__S3CONN__CREDENTIALS", raising=False)
     cfg = SourceFilesystem(

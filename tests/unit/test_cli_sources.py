@@ -1,10 +1,10 @@
-"""Tests for `python -m data_pipeline_template sources ...`."""
+"""Tests for `python -m dlt_data_pipeline sources ...`."""
 
 from __future__ import annotations
 
 import pytest
 
-from data_pipeline_template.__main__ import main
+from dlt_data_pipeline.__main__ import main
 
 
 def test_sources_list_includes_all_builtins(capsys: pytest.CaptureFixture[str]) -> None:

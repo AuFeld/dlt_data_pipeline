@@ -113,7 +113,7 @@ def test_post_write_validate_returns_zero_for_sql_postgres(tmp_path: Path) -> No
     assert rc == 0
     out = tmp_path / "demo_sql_pg.yml"
     assert out.exists()
-    from data_pipeline_template.cli.pipelines_cmds import validate_pipelines
+    from dlt_data_pipeline.cli.pipelines_cmds import validate_pipelines
 
     report = validate_pipelines(tmp_path, "demo_sql_pg")
     assert report["status"] == "ok", report

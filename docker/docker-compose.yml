@@ -1,7 +1,7 @@
 # Segment 6 local stack: webserver + scheduler + triggerer + metadata DB +
 # source DB + destination DB. Same image used for every airflow role and for
 # one-shot CLI runs (`docker compose run --rm airflow-scheduler python -m
-# data_pipeline_template run <name>`). The image is also the prod K8s pod
+# dlt_data_pipeline run <name>`). The image is also the prod K8s pod
 # image for Segment 10.
 #
 # Run from repo root via `docker compose -f docker/docker-compose.yml ...`,
@@ -12,7 +12,7 @@
 #   docker compose -f docker/docker-compose.yml up -d --force-recreate \
 #     --no-deps airflow-scheduler airflow-webserver airflow-triggerer
 
-name: dlt_data_pipeline
+name: dlt-data-pipeline
 
 x-airflow-common: &airflow-common
   build:

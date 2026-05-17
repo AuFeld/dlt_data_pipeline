@@ -862,62 +862,6 @@ wheels = [
 ]
 
 [[package]]
-name = "data-pipeline-template"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "apache-airflow" },
-    { name = "apache-airflow-providers-amazon" },
-    { name = "apache-airflow-providers-cncf-kubernetes" },
-    { name = "apache-airflow-providers-postgres" },
-    { name = "dlt", extra = ["duckdb", "filesystem", "postgres", "sql-database"] },
-    { name = "fastmcp" },
-    { name = "pandas" },
-    { name = "pyarrow" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-]
-
-[package.optional-dependencies]
-databricks = [
-    { name = "dlt", extra = ["databricks"] },
-]
-dev = [
-    { name = "mypy" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "responses" },
-    { name = "ruff" },
-    { name = "types-pyyaml" },
-]
-snowflake = [
-    { name = "dlt", extra = ["snowflake"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "apache-airflow", specifier = ">=2.10,<3" },
-    { name = "apache-airflow-providers-amazon", specifier = ">=8" },
-    { name = "apache-airflow-providers-cncf-kubernetes", specifier = ">=8" },
-    { name = "apache-airflow-providers-postgres", specifier = ">=5" },
-    { name = "dlt", extras = ["databricks"], marker = "extra == 'databricks'", specifier = ">=1.0" },
-    { name = "dlt", extras = ["duckdb", "postgres", "filesystem", "sql-database"], specifier = ">=1.0" },
-    { name = "dlt", extras = ["snowflake"], marker = "extra == 'snowflake'", specifier = ">=1.0" },
-    { name = "fastmcp", specifier = ">=2" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
-    { name = "pandas", specifier = ">=2.0" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7" },
-    { name = "pyarrow", specifier = ">=15" },
-    { name = "pydantic", specifier = ">=2.7" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "responses", marker = "extra == 'dev'", specifier = ">=0.25" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
-    { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
-]
-provides-extras = ["snowflake", "databricks", "dev"]
-
-[[package]]
 name = "databricks-sdk"
 version = "0.108.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1040,6 +984,62 @@ snowflake = [
 sql-database = [
     { name = "sqlalchemy" },
 ]
+
+[[package]]
+name = "dlt-data-pipeline"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "apache-airflow" },
+    { name = "apache-airflow-providers-amazon" },
+    { name = "apache-airflow-providers-cncf-kubernetes" },
+    { name = "apache-airflow-providers-postgres" },
+    { name = "dlt", extra = ["duckdb", "filesystem", "postgres", "sql-database"] },
+    { name = "fastmcp" },
+    { name = "pandas" },
+    { name = "pyarrow" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+]
+
+[package.optional-dependencies]
+databricks = [
+    { name = "dlt", extra = ["databricks"] },
+]
+dev = [
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "responses" },
+    { name = "ruff" },
+    { name = "types-pyyaml" },
+]
+snowflake = [
+    { name = "dlt", extra = ["snowflake"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "apache-airflow", specifier = ">=2.10,<3" },
+    { name = "apache-airflow-providers-amazon", specifier = ">=8" },
+    { name = "apache-airflow-providers-cncf-kubernetes", specifier = ">=8" },
+    { name = "apache-airflow-providers-postgres", specifier = ">=5" },
+    { name = "dlt", extras = ["databricks"], marker = "extra == 'databricks'", specifier = ">=1.0" },
+    { name = "dlt", extras = ["duckdb", "postgres", "filesystem", "sql-database"], specifier = ">=1.0" },
+    { name = "dlt", extras = ["snowflake"], marker = "extra == 'snowflake'", specifier = ">=1.0" },
+    { name = "fastmcp", specifier = ">=2" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
+    { name = "pandas", specifier = ">=2.0" },
+    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7" },
+    { name = "pyarrow", specifier = ">=15" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "responses", marker = "extra == 'dev'", specifier = ">=0.25" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+    { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
+]
+provides-extras = ["snowflake", "databricks", "dev"]
 
 [[package]]
 name = "dnspython"

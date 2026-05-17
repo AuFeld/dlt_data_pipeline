@@ -12,7 +12,7 @@ from pathlib import Path
 
 from airflow.models import DagBag
 
-from data_pipeline_template.config.loader import load_pipelines
+from dlt_data_pipeline.config.loader import load_pipelines
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DAGS_DIR = REPO_ROOT / "dags"

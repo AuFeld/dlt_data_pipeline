@@ -17,8 +17,8 @@ from __future__ import annotations
 import pytest
 from kubernetes.client import V1Pod
 
-from data_pipeline_template.airflow.dag_factory import _pod_override
-from data_pipeline_template.config.models import ResourcesConfig
+from dlt_data_pipeline.airflow.dag_factory import _pod_override
+from dlt_data_pipeline.config.models import ResourcesConfig
 
 
 @pytest.mark.parametrize(

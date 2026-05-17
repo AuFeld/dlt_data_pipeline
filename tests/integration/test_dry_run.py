@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import responses
 
-from data_pipeline_template import pipeline_factory
+from dlt_data_pipeline import pipeline_factory
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PIPELINES_SRC = REPO_ROOT / "pipelines" / "example_rest_to_duckdb.yml"

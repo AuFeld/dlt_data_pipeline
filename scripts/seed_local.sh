@@ -70,7 +70,7 @@ Next steps:
   - Airflow UI:  http://localhost:8080   (admin / admin)
   - Trigger any pipeline DAG from the UI, OR run a pipeline standalone:
       docker compose -f docker/docker-compose.yml run --rm airflow-scheduler \
-        python -m data_pipeline_template run example_rest_to_duckdb
+        python -m dlt_data_pipeline run example_rest_to_duckdb
   - Run the live-Postgres integration test (tests/ is not baked into the
     image — bind-mount it for this one invocation):
       docker compose -f docker/docker-compose.yml run --rm \

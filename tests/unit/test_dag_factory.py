@@ -15,9 +15,9 @@ import dlt
 import pytest
 from airflow.datasets import Dataset
 
-from data_pipeline_template.airflow.dag_factory import build_dag
-from data_pipeline_template.config.loader import load_pipelines
-from data_pipeline_template.sources import pg_cdc
+from dlt_data_pipeline.airflow.dag_factory import build_dag
+from dlt_data_pipeline.config.loader import load_pipelines
+from dlt_data_pipeline.sources import pg_cdc
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "pipelines_dag_factory"
 

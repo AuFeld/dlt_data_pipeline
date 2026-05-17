@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from data_pipeline_template.config import ConfigError, load_pipelines
+from dlt_data_pipeline.config import ConfigError, load_pipelines
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 REPO_PIPELINES = Path(__file__).resolve().parents[2] / "pipelines"

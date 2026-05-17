@@ -1,4 +1,4 @@
-# AGENTS.md — agent brief for `data_pipeline_template`
+# AGENTS.md — agent brief for `dlt_data_pipeline`
 
 This is a shared **dlt + Airflow Fivetran replacement**. The full design is in
 [`data_pipeline_plan.md`](data_pipeline_plan.md); this file is a focused brief
@@ -24,11 +24,11 @@ from pydantic models). Each YAML carries a
 editors validate inline.
 
 The pydantic source of truth is
-[`src/data_pipeline_template/config/models.py`](src/data_pipeline_template/config/models.py).
+[`src/dlt_data_pipeline/config/models.py`](src/dlt_data_pipeline/config/models.py).
 Regenerate the JSON Schema after any model change:
 
 ```
-python -m data_pipeline_template config schema
+python -m dlt_data_pipeline config schema
 ```
 
 The `regen-pipeline-schema` pre-commit hook enforces this; it fails the commit
@@ -56,8 +56,8 @@ dlt-native fallback: the same value can live in `.dlt/secrets.toml` under
 ## Validate without running
 
 ```
-python -m data_pipeline_template pipelines validate            # all
-python -m data_pipeline_template pipelines validate <name>     # one
+python -m dlt_data_pipeline pipelines validate            # all
+python -m dlt_data_pipeline pipelines validate <name>     # one
 ```
 
 Parses + validates `pipelines/*.yml` against the pydantic schema. Exit 0 if
@@ -67,18 +67,18 @@ process — sub-second feedback.
 ## Introspect available source types
 
 ```
-python -m data_pipeline_template sources list
-python -m data_pipeline_template sources describe <type>
+python -m dlt_data_pipeline sources list
+python -m dlt_data_pipeline sources describe <type>
 ```
 
 `describe` prints the env-var template, required + allowed `source.config`
 keys, and source-specific notes. Source types are plugin-discovered via the
-`data_pipeline_template.sources` entry-point group — no hardcoded list.
+`dlt_data_pipeline.sources` entry-point group — no hardcoded list.
 
 ## Dry-run a pipeline (extract + normalize, skip destination write)
 
 ```
-python -m data_pipeline_template run <name> --limit 1 --no-load
+python -m dlt_data_pipeline run <name> --limit 1 --no-load
 ```
 
 `--no-load` runs `pipeline.extract()` + `pipeline.normalize()` but skips
@@ -93,7 +93,7 @@ until Segment 8) raise `NotImplementedError` during `build()` regardless of
 ## Diagnose missing credentials
 
 ```
-python -m data_pipeline_template pipelines doctor
+python -m dlt_data_pipeline pipelines doctor
 ```
 
 For each pipeline, derives the expected env var from the source +
@@ -105,7 +105,7 @@ non-zero if any pipeline has `MISSING` rows.
 
 `pipeline_factory.py` and everything under `sources/`, `destinations/`,
 `config/`, and `cli/` must remain Airflow-agnostic. Only
-`src/data_pipeline_template/airflow/` and `dags/` may import Airflow. Ruff
+`src/dlt_data_pipeline/airflow/` and `dags/` may import Airflow. Ruff
 enforces via `flake8-tidy-imports`
 ([`pyproject.toml`](pyproject.toml) under `[tool.ruff.lint.flake8-tidy-imports]`).
 Adding `import airflow` outside the allowed subpackages fails CI.
@@ -136,7 +136,7 @@ job ships `if: false` until cluster auth secrets are provisioned.
 ## CDC operations (Segment 7, `pg_cdc` source)
 
 `pg_cdc` wraps the vendored
-[`dlt pg_replication`](src/data_pipeline_template/sources/pg_cdc/_vendor/NOTICE.md)
+[`dlt pg_replication`](src/dlt_data_pipeline/sources/pg_cdc/_vendor/NOTICE.md)
 verified source. Required source-Postgres setup:
 
 - `wal_level=logical` plus non-trivial `max_replication_slots` and
@@ -167,7 +167,7 @@ Slot + publication lifecycle:
 `append` → `merge`. `merge` / `replace` pass through unchanged.
 
 Slot-lag sensor (opt-in): wire
-[`PgReplicationSlotLagSensor`](src/data_pipeline_template/airflow/sensors.py)
+[`PgReplicationSlotLagSensor`](src/dlt_data_pipeline/airflow/sensors.py)
 into a separate monitoring DAG when you want to fail on lag spikes. It's not
 auto-wired into generated cdc DAGs — alerting routing lands in Segment 9.
 

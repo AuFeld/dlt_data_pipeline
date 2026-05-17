@@ -1,5 +1,5 @@
 [project]
-name = "data_pipeline_template"
+name = "dlt-data-pipeline"
 version = "0.1.0"
 description = "Reusable dlt + Airflow Fivetran replacement"
 requires-python = ">=3.12,<3.13"
@@ -42,24 +42,24 @@ dev = [
   "responses>=0.25",
 ]
 
-[project.entry-points."data_pipeline_template.sources"]
-rest_api = "data_pipeline_template.sources.rest_api:builder"
-sql_database = "data_pipeline_template.sources.sql_database:builder"
-filesystem = "data_pipeline_template.sources.filesystem:builder"
-pg_cdc = "data_pipeline_template.sources.pg_cdc:builder"
+[project.entry-points."dlt_data_pipeline.sources"]
+rest_api = "dlt_data_pipeline.sources.rest_api:builder"
+sql_database = "dlt_data_pipeline.sources.sql_database:builder"
+filesystem = "dlt_data_pipeline.sources.filesystem:builder"
+pg_cdc = "dlt_data_pipeline.sources.pg_cdc:builder"
 
-[project.entry-points."data_pipeline_template.sources.metadata"]
-rest_api = "data_pipeline_template.sources.rest_api._metadata:metadata"
-sql_database = "data_pipeline_template.sources.sql_database._metadata:metadata"
-filesystem = "data_pipeline_template.sources.filesystem._metadata:metadata"
-pg_cdc = "data_pipeline_template.sources.pg_cdc._metadata:metadata"
+[project.entry-points."dlt_data_pipeline.sources.metadata"]
+rest_api = "dlt_data_pipeline.sources.rest_api._metadata:metadata"
+sql_database = "dlt_data_pipeline.sources.sql_database._metadata:metadata"
+filesystem = "dlt_data_pipeline.sources.filesystem._metadata:metadata"
+pg_cdc = "dlt_data_pipeline.sources.pg_cdc._metadata:metadata"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/data_pipeline_template"]
+packages = ["src/dlt_data_pipeline"]
 
 [tool.ruff]
 line-length = 100
@@ -68,7 +68,7 @@ src = ["src", "tests"]
 # Vendored upstream sources (e.g. dlt pg_replication) are kept verbatim under
 # */_vendor/ so upgrades are a re-copy; lint them at upstream's standards, not
 # ours.
-extend-exclude = ["src/data_pipeline_template/sources/*/_vendor/"]
+extend-exclude = ["src/dlt_data_pipeline/sources/*/_vendor/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "TID", "UP", "B"]
@@ -80,7 +80,7 @@ select = ["E", "F", "I", "TID", "UP", "B"]
 banned-module-level-imports = ["airflow"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/data_pipeline_template/airflow/**" = ["TID253"]
+"src/dlt_data_pipeline/airflow/**" = ["TID253"]
 "dags/**" = ["TID253"]
 "tests/**" = ["TID253"]
 
@@ -88,10 +88,10 @@ banned-module-level-imports = ["airflow"]
 python_version = "3.12"
 strict = true
 mypy_path = "src"
-packages = ["data_pipeline_template"]
+packages = ["dlt_data_pipeline"]
 # Vendored upstream sources are kept verbatim and lint at upstream's standards,
 # not ours (mirrors the ruff extend-exclude rule above).
-exclude = ["src/data_pipeline_template/sources/.*/_vendor/"]
+exclude = ["src/dlt_data_pipeline/sources/.*/_vendor/"]
 
 [[tool.mypy.overrides]]
 # kubernetes Python client lacks py.typed marker / stubs; lazily imported in

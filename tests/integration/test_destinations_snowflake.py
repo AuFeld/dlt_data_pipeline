@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from data_pipeline_template import pipeline_factory
+from dlt_data_pipeline import pipeline_factory
 
 pytestmark = [
     pytest.mark.snowflake,

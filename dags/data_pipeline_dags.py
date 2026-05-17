@@ -13,8 +13,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from data_pipeline_template.airflow.dag_factory import build_dag
-from data_pipeline_template.config.loader import ConfigError, load_pipelines
+from dlt_data_pipeline.airflow.dag_factory import build_dag
+from dlt_data_pipeline.config.loader import ConfigError, load_pipelines
 
 log = logging.getLogger(__name__)
 

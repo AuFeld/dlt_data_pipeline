@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from data_pipeline_template.sources import registry
+from dlt_data_pipeline.sources import registry
 
 
 def test_registry_discovers_rest_api_via_entry_points() -> None:
-    # No direct import of data_pipeline_template.sources.rest_api here — discovery
+    # No direct import of dlt_data_pipeline.sources.rest_api here — discovery
     # must be entry-point-driven per Design principle #3.
     builder = registry.get_builder("rest_api")
     assert callable(builder)

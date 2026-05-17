@@ -1,4 +1,4 @@
-"""Tests for `python -m data_pipeline_template config schema`."""
+"""Tests for `python -m dlt_data_pipeline config schema`."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from data_pipeline_template.__main__ import main
+from dlt_data_pipeline.__main__ import main
 
 
 def test_schema_writes_valid_json(tmp_path: Path) -> None:
@@ -51,5 +51,5 @@ def test_committed_schema_is_in_sync() -> None:
     rc = main(["config", "schema", "--check", "--out", str(repo_schema)])
     assert rc == 0, (
         "pipelines/_schema.json is out of sync with config/models.py. "
-        "Run `python -m data_pipeline_template config schema` to regenerate."
+        "Run `python -m dlt_data_pipeline config schema` to regenerate."
     )

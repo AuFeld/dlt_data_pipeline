@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from data_pipeline_template.airflow import callbacks as cb_mod
-from data_pipeline_template.config.models import AlertsConfig, AlertSeverity
+from dlt_data_pipeline.airflow import callbacks as cb_mod
+from dlt_data_pipeline.config.models import AlertsConfig, AlertSeverity
 
 
 @pytest.fixture

@@ -12,11 +12,11 @@ from pathlib import Path
 import pytest
 from dlt.extract import DltSource
 
-from data_pipeline_template.config.models import (
+from dlt_data_pipeline.config.models import (
     SourceRestApi,
     SourceSqlDatabase,
 )
-from data_pipeline_template.sources.sql_database import builder
+from dlt_data_pipeline.sources.sql_database import builder
 
 CREDS_ENV = "SOURCES__SQL_DATABASE__SQLITE_TEST__CREDENTIALS"
 

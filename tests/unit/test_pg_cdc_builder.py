@@ -15,8 +15,8 @@ import dlt
 import pytest
 from dlt.extract import DltSource
 
-from data_pipeline_template.config.models import SourcePgCdc, SourceRestApi
-from data_pipeline_template.sources import pg_cdc
+from dlt_data_pipeline.config.models import SourcePgCdc, SourceRestApi
+from dlt_data_pipeline.sources import pg_cdc
 
 CREDS_ENV = "SOURCES__PG_CDC__PG_SOURCE_TEST__CREDENTIALS"
 

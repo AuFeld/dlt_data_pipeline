@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from data_pipeline_template.config.models import (
+from dlt_data_pipeline.config.models import (
     AlertsConfig,
     AlertSeverity,
     OptionsConfig,

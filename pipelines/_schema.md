@@ -1,9 +1,9 @@
 # Pipeline YAML schema
 
 One YAML per pipeline lives in this directory. The loader at
-`src/data_pipeline_template/config/loader.py` discovers every `*.yml` (files
+`src/dlt_data_pipeline/config/loader.py` discovers every `*.yml` (files
 prefixed with `_` are skipped, like this one), validates against
-[`PipelineConfig`](../src/data_pipeline_template/config/models.py), and
+[`PipelineConfig`](../src/dlt_data_pipeline/config/models.py), and
 aggregates all errors before raising.
 
 ## Top-level fields

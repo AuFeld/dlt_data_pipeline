@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from data_pipeline_template.mcp_server import mcp
+from dlt_data_pipeline.mcp_server import mcp
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
