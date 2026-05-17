@@ -103,8 +103,11 @@ jobs:
         run: uv run pytest tests/integration -m cdc
 
   integration-snowflake:
+    # GitHub Actions disallows `secrets` in job-level `if:`. The pytest
+    # `skipif(not SNOWFLAKE_TEST_ACCOUNT)` in tests/integration/test_destinations_snowflake.py
+    # is the actual gate — the job runs, installs deps, and skips the single
+    # test cleanly when secrets are absent. CI stays green either way.
     runs-on: ubuntu-latest
-    if: ${{ secrets.SNOWFLAKE_TEST_ACCOUNT != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-uv-airflow
