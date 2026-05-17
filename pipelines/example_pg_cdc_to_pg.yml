@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=./_schema.json
+# Segment 7 end-to-end runnable: pg_source -> pg_warehouse via logical
+# replication. Both databases ship in docker/docker-compose.yml; the slot +
+# publication are created lazily on the first run via init_replication().
+# Re-runs are idempotent (slot + publication reuse; no double-snapshot).
+name: example_pg_cdc_to_pg
+source:
+  type: pg_cdc
+  connection: pg_source
+  config:
+    slot_name: dlt_orders_slot
+    publication_name: dlt_orders_pub
+    schema: public
+    tables:
+      - orders
+sync:
+  mode: cdc
+  primary_key: id
+destination:
+  type: postgres
+  connection: pg_warehouse
+  dataset: raw_orders_cdc
+schedule:
+  cron: "*/5 * * * *"
+  enabled: true
+options:
+  # cdc mode auto-promotes append -> merge in pipeline_factory.build(); merge
+  # is restated here so the YAML is self-documenting and `pipelines validate`
+  # passes the merge + primary_key cross-field check.
+  write_disposition: merge
+  schema_contract: evolve

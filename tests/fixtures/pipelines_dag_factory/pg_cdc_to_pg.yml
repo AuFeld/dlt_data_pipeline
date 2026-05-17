@@ -1,5 +1,4 @@
-# yaml-language-server: $schema=./_schema.json
-name: example_pg_cdc_to_snowflake
+name: pg_cdc_to_pg
 source:
   type: pg_cdc
   connection: pg_source
@@ -13,12 +12,12 @@ sync:
   mode: cdc
   primary_key: id
 destination:
-  type: snowflake
-  connection: snowflake_warehouse
+  type: postgres
+  connection: pg_warehouse
   dataset: raw_orders_cdc
 schedule:
   cron: "*/5 * * * *"
   enabled: true
 options:
   write_disposition: merge
-  schema_contract: freeze
+  schema_contract: evolve

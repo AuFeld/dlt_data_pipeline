@@ -115,6 +115,44 @@ flow through `AIRFLOW__<SECTION>__<KEY>` env vars set in
 keeps the same image swappable between LocalExecutor (dev) and
 KubernetesExecutor (prod) per Design principle #4.
 
+## CDC operations (Segment 7, `pg_cdc` source)
+
+`pg_cdc` wraps the vendored
+[`dlt pg_replication`](src/data_pipeline_template/sources/pg_cdc/_vendor/NOTICE.md)
+verified source. Required source-Postgres setup:
+
+- `wal_level=logical` plus non-trivial `max_replication_slots` and
+  `max_wal_senders` (docker-compose `postgres-source` ships with all three).
+- A connection role with the `REPLICATION` attribute. Use the dedicated
+  `replicator` role from
+  [`docker/postgres-source-init/01_replication.sql`](docker/postgres-source-init/01_replication.sql)
+  for least-privilege prod setups; the existing `source` role is also granted
+  REPLICATION for dev ergonomics.
+- Each replicated table must own a `REPLICA IDENTITY` (the PK default is
+  sufficient; `seed_local.sh` states it explicitly for `orders`).
+
+Slot + publication lifecycle:
+
+- `init_replication` is called eagerly on every `pipeline_factory.build()` —
+  the call is idempotent (existing slot/pub are no-ops). The vendor raises
+  `RuntimeError` on subsequent calls with `persist_snapshots=True`; the
+  builder swallows it.
+- Set `source.config.reset: true` in YAML for a one-shot run to drop +
+  recreate the slot + publication. Use after an incompatible DDL change
+  (see "DDL during streaming" under known limitations).
+- Deleting a pipeline YAML does NOT clean up the slot or publication —
+  manual `SELECT pg_drop_replication_slot('…');` + `DROP PUBLICATION …;`
+  required. A paused pipeline keeps the slot open and retains WAL on the
+  source, eventually filling disk. Monitor.
+
+`options.write_disposition` for cdc: the factory silent-promotes the default
+`append` → `merge`. `merge` / `replace` pass through unchanged.
+
+Slot-lag sensor (opt-in): wire
+[`PgReplicationSlotLagSensor`](src/data_pipeline_template/airflow/sensors.py)
+into a separate monitoring DAG when you want to fail on lag spikes. It's not
+auto-wired into generated cdc DAGs — alerting routing lands in Segment 9.
+
 ## Known limitations
 
 - `source.config` is a free-form `dict[str, Any]` in `PipelineConfig`, so
@@ -122,6 +160,14 @@ KubernetesExecutor (prod) per Design principle #4.
   reports the per-source allowed / required keys instead — consult it
   before authoring a new pipeline. Typed per-source sub-models are
   deferred (see plan, post-v1).
-- `filesystem` and `pg_cdc` source builders are stubs until Segments 7–8.
-  Their metadata is registered but `python -m data_pipeline_template run`
-  on a pipeline that uses them will raise `NotImplementedError`.
+- `filesystem` source builder is a stub until Segment 8. Its metadata is
+  registered but `python -m data_pipeline_template run` on a pipeline that
+  uses it will raise `NotImplementedError`.
+- **DDL during CDC streaming:** the vendored `pg_replication` halts on
+  incompatible schema changes mid-stream. Recovery is a one-shot run with
+  `source.config.reset: true` after the schema migration lands.
+- **Multi-table publications:** each pipeline owns its own
+  `publication_name`; sharing publications across pipelines is unsupported.
+- **CDC alerting:** the slot-lag sensor exists but routes nowhere — it
+  fails the sensor task on breach. Slack / email routing lands in
+  Segment 9.

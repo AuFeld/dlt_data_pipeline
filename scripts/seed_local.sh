@@ -74,6 +74,26 @@ INSERT INTO public.customers (id, name, updated_at) VALUES
   (1, 'alice', '2025-01-01 00:00:00+00'),
   (2, 'bob',   '2025-01-01 00:01:00+00')
 ON CONFLICT (id) DO NOTHING;
+
+-- Segment 7: every cdc pipeline owns its own publication via
+-- init_replication(). The example_pg_cdc_to_pg pipeline references
+-- publication 'dlt_orders_pub' + slot 'dlt_orders_slot' — predeclare the
+-- publication idempotently so first-run snapshot creation succeeds even if
+-- the `source` role's CREATE privilege has been narrowed. Re-running the
+-- seed leaves an existing publication untouched.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'dlt_orders_pub') THEN
+    CREATE PUBLICATION dlt_orders_pub FOR TABLE public.orders WITH (publish = 'insert, update, delete');
+  END IF;
+END
+$$;
+
+-- Required by Postgres logical replication: every replicated table must
+-- declare a REPLICA IDENTITY so UPDATE/DELETE rows carry the old PK in
+-- the WAL stream. The PK index satisfies the DEFAULT identity, but state
+-- it explicitly so the requirement is grep-able when CDC tests fail.
+ALTER TABLE public.orders REPLICA IDENTITY DEFAULT;
 SQL
 
 echo "[seed] source DB ready."
@@ -98,6 +118,18 @@ Next steps:
         -v "$(pwd)/tests:/opt/app/tests" \
         airflow-scheduler \
         pytest tests/integration/test_sql_database_incremental.py::test_live_pg_to_pg_incremental
+  - Run the live-Postgres CDC integration test (also bind-mounts tests/):
+      docker compose -f docker/docker-compose.yml run --rm \
+        -e RUN_LIVE_PG_CDC=1 \
+        -v "$(pwd)/tests:/opt/app/tests" \
+        airflow-scheduler \
+        pytest tests/integration/test_pg_cdc.py
+  - Inspect replication slot lag from the host:
+      docker compose -f docker/docker-compose.yml exec -T postgres-source \
+        psql -U source -d source_db -c \
+        "SELECT slot_name, confirmed_flush_lsn, \
+         pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn) AS lag_bytes \
+         FROM pg_replication_slots;"
 
 After editing .env (e.g. swapping credentials), `docker compose restart` does
 NOT pick up the new values — env_file is only read at container creation.

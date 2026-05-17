@@ -9,11 +9,14 @@ dag id, schedule, max_active_runs, catchup, pause-on-creation, the inner
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
+import dlt
 import pytest
 
 from data_pipeline_template.airflow.dag_factory import build_dag
 from data_pipeline_template.config.loader import load_pipelines
+from data_pipeline_template.sources import pg_cdc
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "pipelines_dag_factory"
 
@@ -101,4 +104,40 @@ def test_build_dag_sql_database_tasks_per_resource(
     task_ids = {t.task_id for t in tasks}
     assert any(t.endswith("_orders") for t in task_ids), task_ids
     assert any(t.endswith("_customers") for t in task_ids), task_ids
+    assert all(t.task_id.startswith(f"{cfg.name}.") for t in tasks)
+
+
+def test_build_dag_pg_cdc(configs: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    """pg_cdc YAML builds a DAG without a live Postgres.
+
+    Stubs the vendored ``init_replication`` + ``replication_resource`` so the
+    builder produces a real ``DltSource`` (and therefore a real
+    ``PipelineTasksGroup``) without opening a replication connection.
+    """
+    monkeypatch.setenv(
+        "SOURCES__PG_CDC__PG_SOURCE__CREDENTIALS",
+        "postgresql://u:p@h:5432/db",
+    )
+
+    def _fake_init(**_: Any) -> None:
+        return None
+
+    def _fake_resource(**kwargs: Any) -> Any:
+        @dlt.resource(name=kwargs["slot_name"])
+        def _streaming() -> Any:
+            yield from []
+
+        return _streaming
+
+    monkeypatch.setattr(pg_cdc, "init_replication", _fake_init)
+    monkeypatch.setattr(pg_cdc, "replication_resource", _fake_resource)
+
+    cfg = configs["pg_cdc_to_pg"]
+    dag = build_dag(cfg)
+
+    assert dag.dag_id == "pg_cdc_to_pg"
+    assert dag.schedule_interval == "*/5 * * * *"
+    assert set(dag.tags) >= {"pg_cdc", "postgres", "cdc"}
+    tasks = _tasks_for(dag)
+    assert tasks, "pg_cdc DAG must have at least the streaming task"
     assert all(t.task_id.startswith(f"{cfg.name}.") for t in tasks)
