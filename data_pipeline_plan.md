@@ -328,60 +328,259 @@ catches them.
   DELETE propagate to destination; replication slot persists across restarts.
 
 ### Segment 8 — Filesystem/S3 source + Snowflake & Databricks destinations
-- `sources/filesystem.py` (local + S3; CSV/Parquet/JSONL). Snowflake +
-  Databricks branches in `destinations/factory.py`. Credential docs.
-- **Done when:** filesystem→duckdb passes in tests; Snowflake/Databricks
-  validated against real accounts if available, else config-validation +
-  duckdb stand-in.
+- `sources/filesystem/__init__.py` is currently a stub raising
+  `NotImplementedError`. Implement the real builder (local + S3;
+  CSV/Parquet/JSONL) wrapping `dlt.sources.filesystem`. The entry-point
+  registration is **already in place** in `pyproject.toml` (lines 39, 45) —
+  no Segment 1 work to redo.
+- Snowflake + Databricks branches in `destinations/factory.py` (currently
+  raise `NotImplementedError`). Snowflake builder must accept the
+  key-pair-auth path called out in **Tricky Parts** (base64-encoded private
+  key via env var, or mounted key file) — don't defer that to Segment 9.
+  Databricks builder must accept host + http_path + token *and* a separate
+  staging-location credential (S3/ADLS volume).
+- Address the orphan example: `pipelines/example_pg_cdc_to_snowflake.yml` is
+  already committed but currently breaks `pipelines doctor` because the
+  destination stub raises during `build()`. Recommendation: implement
+  Snowflake first so the example becomes runnable. Fallback: rename to
+  `example_disabled_…` and teach the loader to skip files matching that
+  prefix.
+- Add a committed `pipelines/example_filesystem_to_duckdb.yml` exercised by
+  the integration test below.
+- Tests:
+  - `tests/integration/test_filesystem_source.py` — hermetic
+    filesystem→duckdb runs; fixture seeds CSV / Parquet / JSONL under
+    `tests/fixtures/files/`. No network. Replaces the previous
+    aspirational claim that this test already exists.
+  - `tests/integration/test_destinations_snowflake.py` and
+    `tests/integration/test_destinations_databricks.py` — gated by
+    `pytest.mark.skipif(not os.environ.get("SNOWFLAKE_<…>"), reason=…)`
+    (mirror for Databricks). When skipped, a paired
+    `tests/unit/test_destinations_factory_config.py` exercises
+    `destinations.factory.build()` for both targets with stub creds and
+    asserts the returned destination's config shape — keeps CI green
+    without real accounts.
+- **Done when:**
+  - `pipelines doctor` reports a non-`MISSING` slot for every committed
+    example YAML (including the Snowflake CDC example).
+  - `pytest tests/integration/test_filesystem_source.py` green with no
+    external services.
+  - Snowflake key-pair-auth path documented in `destinations/factory.py`
+    and exercised by a unit test.
+  - Snowflake/Databricks integration tests run when creds present, skip
+    cleanly when absent; CI stays green either way.
 
-### Segment 9 — Observability, alerting, template polish
-- `airflow/callbacks.py`: `on_failure_callback` posting to Slack/email
-  (re-uses `observability/alerts.py`). Freshness via Airflow
-  `Dataset`/`DatasetEvent` plus `SLA` misses (note Airflow 2.x SLA caveats;
-  in Airflow 3.x switch to deadlines). `scripts/new_pipeline.py`, CI workflow
-  (`.github/workflows/ci.yml`) installs Airflow via constraints file then runs
-  unit + integration tests.
-- **Done when:** simulated failure triggers alert; scaffolder produces valid
-  YAML; CI green.
+### Segment 9 — Observability, alerting, scaffolder polish, CI
+- **Scaffolder upgrade** (not greenfield): `scripts/new_pipeline.py` already
+  exists in a minimal form (~97 LOC, hardcoded template) from Segment 6.6.
+  Upgrade to the polished version:
+  - Source-metadata-driven prompts using existing
+    `sources.registry.describe()`.
+  - Destination-metadata-driven prompts using the analogous helper added
+    in `destinations/factory.py` during Segment 8.
+  - Auto-write the
+    `# yaml-language-server: $schema=./_schema.json` directive.
+  - Post-write call to `pipelines validate <name>`; exit non-zero rather
+    than leaving an invalid YAML on disk.
+  - Reuse the data-helper functions already extracted under `cli/`
+    during Segment 6.6 (no subprocess hops).
+- **`airflow/callbacks.py`** (new) + **`observability/alerts.py`** (new
+  directory and module). `on_failure_callback` from `dag_factory` calls
+  the alerts module which posts to Slack webhook + SMTP. The slot-lag
+  sensor already exists at `airflow/sensors.py` (Segment 7); this segment
+  only adds the **routing** — no new sensor code. Add:
+  - Severity routing via YAML `alerts.severity` (P1/P2 split → different
+    Slack channels / email distribution lists).
+  - Dedup window (suppress duplicate failures within N minutes,
+    configurable per pipeline).
+  - Schema-change alerts (from dlt's evolution events), severity `info`.
+- **Dataset / SLA wiring**: in `dag_factory.py`, wire
+  `Dataset`/`DatasetEvent` so downstream pipelines can subscribe to
+  upstream completion (foundation for the freshness story).
+  Airflow 2.x `SLA` is the v1 path with `sla_miss_callback`; document the
+  Airflow 3.x `deadline` API switch as a follow-up, not a blocker.
+- **CI** — `.github/workflows/ci.yml` with an explicit job matrix:
+  - `lint` — ruff + mypy + pre-commit (`regen-pipeline-schema`).
+  - `unit` — `pytest tests/unit`.
+  - `integration-duckdb` — hermetic, no creds.
+  - `integration-postgres` — composes up `postgres-source` +
+    `postgres-destination` services.
+  - `integration-snowflake` — skipped when secrets absent.
+  - `integration-databricks` — skipped when secrets absent.
+
+  Airflow install via the matching constraints file per Segment 1.
+  Cache `~/.cache/uv` + `~/.cache/pip` keyed on `pyproject.toml`.
+- **Done when:**
+  - Simulated failure on `example_pg_to_pg_incremental` posts a Slack
+    message via a mocked webhook URL.
+  - `scripts/new_pipeline.py foo --source sql_database --dest postgres`
+    writes a YAML that passes `pipelines validate` on the first try.
+  - CI matrix green on a PR that touches only docs.
 
 ### Segment 10 — Prod deployment + executor
-- Switch `airflow.cfg` (or `AIRFLOW__CORE__EXECUTOR` env) to
-  `KubernetesExecutor`; ship a base `pod_template_file` under
-  `airflow_home/pod_templates/` that references the deploy image.
-- New files: `deploy/k8s/` with manifests for the webserver, scheduler,
-  triggerer, metadata Postgres, and Airflow Secret/ConfigMap.
-- CI builds + pushes the image from `docker/Dockerfile` to a registry; deploy
-  step rolls the webserver + scheduler + triggerer and updates the pod
-  template's image tag.
-- Secrets: switch from `.env` / `.dlt/secrets.toml` to a real backend
-  (k8s `Secret` env-mounted onto worker pods, optionally via Airflow's
-  Secrets Backend integration) — logical connection names in YAML resolve
-  identically; only the resolver layer changes.
-- Logs: scheduler/webserver stdout shipped to the cluster log aggregator;
-  worker-pod logs persisted via Airflow remote logging (S3 / GCS / etc.);
-  remove any code paths that assume local-disk persistence beyond a run.
-- Resource sizing: YAML `resources:` block (added in Segment 4) flows through
-  `executor_config={"pod_override": V1Pod(...)}` into per-task CPU/RAM
-  requests on the pod.
-- **Done when:** a scheduled pipeline runs as a fresh pod per task with
-  isolated CPU/RAM limits; image rollout updates the run image without
-  aborting in-flight runs; secrets resolve from the prod backend; logs are
-  visible in the cluster aggregator; killing the webserver does not abort
-  in-flight runs (scheduler owns state).
+**Already shipped (do not redo):** `ResourcesConfig` + `pod_override`
+wiring landed in Segment 4 (`config/models.py:112`,
+`airflow/dag_factory.py:40`). This segment only consumes that contract.
+
+- Switch executor to `KubernetesExecutor` via
+  `AIRFLOW__CORE__EXECUTOR=KubernetesExecutor` env override (per the
+  Segment 6 "do not edit `airflow.cfg`, env-override" rule). Ship a base
+  `pod_template_file` at `airflow_home/pod_templates/base.yaml` referenced
+  by `AIRFLOW__KUBERNETES_EXECUTOR__POD_TEMPLATE_FILE`. The directory
+  exists today with only a `.gitkeep`.
+- **`deploy/k8s/` scaffolding** — raw manifests, kustomize-vs-helm decision
+  deferred. Layout:
+  - `deploy/k8s/base/webserver-deployment.yaml`
+  - `deploy/k8s/base/scheduler-deployment.yaml`
+  - `deploy/k8s/base/triggerer-deployment.yaml`
+  - `deploy/k8s/base/postgres-metadata-statefulset.yaml`
+  - `deploy/k8s/base/airflow-secret.yaml`
+  - `deploy/k8s/base/airflow-configmap.yaml`
+  - `deploy/k8s/base/pod-template-base.yaml` (mirrors the
+    `airflow_home/pod_templates/base.yaml` referenced above)
+  - `deploy/k8s/overlays/{dev,staging,prod}/` for per-env values.
+- **Secrets backend (v1):** k8s `Secret` env-mounted on the pod template
+  with env-var keys following the existing
+  `SOURCES__<TYPE>__<CONN>__CREDENTIALS` /
+  `DESTINATION__<TYPE>__<CONN>__CREDENTIALS` convention (see
+  `AGENTS.md`). Logical connection names in YAML resolve identically;
+  only the resolver layer changes. The Airflow Secrets Backend
+  integration is the v2 path — documented in the secrets component
+  README, not blocking v1.
+- **Remote logging:** pin v1 to S3 via
+  `AIRFLOW__LOGGING__REMOTE_LOGGING=True` +
+  `AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER=s3://…`. Add
+  `apache-airflow-providers-amazon` to `pyproject.toml`. GCS / Azure as
+  documentation-only. Remove any code paths that assume local-disk
+  persistence beyond a run.
+- **CI image build/push** — extend the Segment 9 CI workflow:
+  - `build-and-push` job on tag push: builds `docker/Dockerfile`, tags
+    `:{git_sha}` + `:{git_tag}`, pushes to the registry.
+  - `deploy` job patches the pod template + rolls the webserver,
+    scheduler, and triggerer deployments.
+- **Pod-spec smoke test** (replaces the deleted "resources flow through"
+  bullet): `tests/integration/test_pod_override.py` asserts the V1Pod
+  shape produced by `dag_factory._pod_override()` for representative
+  `ResourcesConfig` inputs. No cluster required.
+- **Done when:**
+  - A scheduled pipeline runs as a fresh pod per task with isolated
+    CPU/RAM limits inherited from the YAML `resources:` block.
+  - Image rollout updates the run image without aborting in-flight runs.
+  - Secrets resolve from the prod backend.
+  - Logs are visible in the cluster aggregator.
+  - Killing the webserver does not abort in-flight runs (scheduler owns
+    state).
+  - `kubectl get pods -n airflow` shows running webserver / scheduler /
+    triggerer after deploy.
+  - Webserver-deployment rolling restart during an in-flight run does
+    NOT abort the run.
 
 ### Segment 11 — Documentation
-- Rewrite root `README.md`: project purpose, architecture overview, quickstart,
-  the 10-min "add a pipeline" workflow, links to component READMEs.
-- Per-component `README.md` in each major dir — `config/`, `sources/`,
-  `destinations/`, `airflow/`, `observability/`, `docker/`, `pipelines/`,
-  `tests/`. Each covers: what the component does, how to use / extend it
-  (e.g. adding a new source type to `registry.py`), known issues, troubleshooting.
-- Fold relevant **Tricky Parts** + **Open Considerations** notes into the
-  matching component README (CDC setup → `sources/`, secrets → `docker/` +
-  `config/`, etc.) so troubleshooting lives next to the code.
-- **Done when:** new dev adds a pipeline in ~10 min from root README alone;
-  every major dir has a README; troubleshooting sections cover the known
-  failure modes from this plan.
+**README ↔ AGENTS split:** `README.md` is the **human onboarding doc**;
+`AGENTS.md` is the **agent brief** (and `CLAUDE.md` symlinks to it from
+Segment 6.6). Don't duplicate — README links to AGENTS.md for the env-var
+convention, dry-run flow, CDC ops, MCP server, etc. Cross-link the other
+direction too. `README.md` is currently a 21-byte stub.
+
+- **Rewrite root `README.md`:** project purpose; architecture diagram
+  (ASCII or mermaid); quickstart (`docker compose up` + `seed_local.sh`);
+  the 10-min "add a pipeline" workflow (lift from this plan, cross-link
+  to the scaffolder); link table to per-component READMEs; cross-link to
+  `AGENTS.md` for the agent / introspection workflow.
+- **Per-component `README.md`** in each major dir — `config/`, `sources/`,
+  `destinations/`, `airflow/`, `observability/` (created in Segment 9 —
+  README lands once Segment 9 ships), `docker/`, `pipelines/`, `tests/`,
+  `cli/` (shipped in Segment 6.5 but undocumented at component level),
+  plus a top-level docstring for `mcp_server.py` (shipped in 6.6).
+  Each covers: what the component does, how to use / extend it (e.g.
+  adding a new source type to `registry.py`), known issues, troubleshooting.
+- **Fold gaps** — explicit Tricky-Parts → component-README mapping:
+  - CDC setup, replication-slot lifecycle → `sources/README.md`.
+  - Snowflake/Databricks creds → `destinations/README.md`.
+  - Schema evolution → `pipelines/README.md` + `config/README.md`.
+  - State persistence, `max_active_runs`, pool → `airflow/README.md`.
+  - Secret leakage, log scrubbing → `observability/README.md` (created
+    in Segment 9).
+  - Backfill, pipeline lifecycle, incremental edge cases, PII →
+    cross-link to Segment 12 (where these items are now scoped).
+- **Done when:**
+  - `README.md` is the single entry point a new dev needs.
+  - `AGENTS.md` and `README.md` cross-link explicitly.
+  - Each component README ends with a "Known issues / troubleshooting"
+    subsection that quotes the relevant Tricky Parts item verbatim (so a
+    search hits both).
+  - A new dev adds a pipeline in ~10 min from root README alone.
+
+### Segment 12 — Operational hardening
+Promoted from former "Tricky Parts (gap)" items — these have grown beyond
+"decide during build" and need explicit scope.
+
+- **Backfill / initial-load strategy:** chunked / resumable loads via dlt
+  `initial_value` partitioned ranges. Surface as YAML
+  `sync.backfill.chunk_size` + `sync.backfill.partition_field`. Add a new
+  `pipeline_factory.run_backfill(name, start, end)` callable plus a
+  matching `python -m data_pipeline_template run-backfill <name> --start
+  <ts> --end <ts>` CLI subcommand the user calls once before enabling the
+  schedule.
+- **Pipeline lifecycle / orphan cleanup:** a `pipelines delete <name>` CLI
+  subcommand that
+  (a) drops the destination dataset (with `--keep-data` opt-out),
+  (b) drops the CDC replication slot + publication when
+  `source.type == pg_cdc`,
+  (c) removes the YAML and prints the DAG-UI cleanup instruction.
+  Tombstone alternative: a `pipelines/_tombstones/` directory the loader
+  treats as "do not generate a DAG but do not orphan state" — useful
+  when the destination data must be retained.
+- **Incremental edge cases:** explicit `sync.tolerance_seconds` /
+  `sync.lookback` knobs for late-arriving rows; documented per-mode
+  guarantees table in `sources/README.md`. Test fixtures covering
+  timezone-skewed `updated_at`, cursor gaps, late inserts.
+- **Secret-leakage hardening:** a log-scrubbing filter wired into the
+  Airflow logger (regex-strip `password=`, `token=`, `key=` patterns from
+  rendered task logs). Test: a deliberate `raise RuntimeError(creds_url)`
+  in a fixture pipeline produces a log line where the credential is
+  masked.
+- **Data-quality checks (v1 scope):** source-vs-destination row-count
+  reconciliation via a generated `SQLCheckOperator` task per pipeline,
+  gated by YAML `quality.row_count_check: true`. Null / PK / volume-anomaly
+  checks deferred to v2.
+- **Done when:** each bullet has at least one integration test; CLI
+  subcommands exit-code-tested; a row-count-reconciliation task surfaces
+  in an example DAG with a passing check.
+
+### Segment 13 — Multi-environment config + promotion
+Promoted from former "Open Considerations".
+
+- **Env-specific overrides:** `pipelines/_env/<env>.yml` overlay files
+  merged atop each `pipelines/*.yml` at load time. Overlay scope (v1):
+  `destination.connection`, `source.connection`, `schedule.enabled`,
+  `resources`. Loader change in `config/loader.py` accepting `--env
+  <name>`, defaulting to `$DLT_ENV` env var, defaulting to `dev`.
+- **Promotion flow:** `pipelines promote <name> --from staging --to prod`
+  CLI subcommand that diffs the merged config across envs and prints
+  what would change before applying.
+- **Secrets-resolver layering:** documented precedence — env var > Airflow
+  Secrets Backend > `.dlt/secrets.toml`. Wires into Segment 10's k8s
+  Secret env-mount.
+- **Done when:** same pipeline YAML loads under `dev` (duckdb dest) and
+  `prod` (snowflake dest) with no edit to the base YAML; `pipelines
+  doctor --env prod` reports the prod env-var keys.
+
+### Segment 14 — Health monitoring ("who watches the watcher")
+Promoted from former "Open Considerations → Alert depth".
+
+- **Scheduler/triggerer heartbeat:** a standalone `dags/heartbeat_check.py`
+  DAG running every 5min that emits a metric and alerts if a heartbeat
+  is missed twice in a row. Outside the YAML-generation flow.
+- **Schema-change alerts:** hook into dlt's schema-evolution event
+  surface, post to the alert channel with severity `info` (not `error`).
+  Reuses Segment 9 alert routing.
+- **SLA misses → routing:** Airflow 2.x `sla_miss_callback` reusing
+  `observability/alerts.py`; document the Airflow 3.x `deadline`
+  migration path.
+- **Done when:** killing `airflow-scheduler` container fires an alert
+  within 10min; a schema add on a `schema_contract: evolve` pipeline
+  fires an info-level alert.
 
 ## Verification / Testing
 
@@ -400,17 +599,16 @@ catches them.
   restart containers, re-run, confirm state persisted.
 - **Snowflake/Databricks:** gate behind env-var presence (`pytest.mark.skipif`);
   fall back to config-validation-only tests when creds absent so CI stays green.
-- **Airflow-layer tests (gap):** `dag_factory` must be tested directly — assert a
+- **Airflow-layer tests:** `dag_factory` must be tested directly — assert a
   YAML produces the expected `DAG` (id, `schedule`, `max_active_runs`) and a
   `PipelineTasksGroup` containing the expected per-resource tasks. Not just
-  exercised via E2E.
-- **REST source mocking (gap):** hermetic REST tests need a mocking strategy
+  exercised via E2E. Land alongside the Segment 9 CI matrix.
+- **REST source mocking:** hermetic REST tests need a mocking strategy
   (`responses` / VCR cassettes) so unit/integration runs don't depend on a live
-  public API.
-- **Data-quality checks (gap):** add Airflow task-level checks beyond "did it
-  run" — source-vs-destination row-count reconciliation
-  (`SQLCheckOperator`), null/PK checks, volume-anomaly detection (row count
-  drops sharply but run "succeeds"). Decide which are v1.
+  public API. Land alongside the Segment 9 `integration-duckdb` job.
+- **Data-quality checks:** source-vs-destination row-count reconciliation
+  (`SQLCheckOperator`) is scoped under **Segment 12**. Null/PK checks and
+  volume-anomaly detection are deferred to v2.
 
 ## Tricky Parts
 
@@ -448,40 +646,32 @@ catches them.
   resolution. Always install with the matching
   `constraints-<version>-<python>.txt`. Document in `pyproject.toml`
   comments and the CI workflow; pin the Python version alongside.
-- **Backfill / initial load (gap):** first full load of a large source table is
-  the risky run — needs a chunked / resumable strategy (dlt incremental
-  `initial_value`, partitioned ranges), not one giant transaction. No story yet.
-- **Secret leakage (gap):** dlt can echo credentials in logs/tracebacks — add log
-  scrubbing. Airflow renders task templates in logs; use Airflow
-  `Connection`/`Variable` objects (not f-string credentials into operator
-  args) so the UI mask filter catches them. CDC needs a dedicated source DB
-  user with `REPLICATION` (least privilege), not a superuser.
-- **Pipeline lifecycle (gap):** deleting a `pipelines/*.yml` currently orphans the
-  destination dataset, CDC replication slot, and the Airflow DAG (which then
-  disappears from the UI, possibly mid-run). Decide cleanup path (manual
-  runbook vs. tombstone). Also: `models.py` schema versioning when the YAML
-  contract changes shape.
-- **Incremental edge cases (gap):** late-arriving rows, non-monotonic cursor
-  fields, timezone skew on `updated_at`, cursor gaps. Document supported
-  guarantees per sync mode.
-- **PII / governance (gap):** field-level masking / hashing / column exclusion and
-  GDPR delete propagation — `schema_contract: freeze` is not enough for regulated
-  destinations.
+- **Secret leakage** — context for the log-scrubbing work scoped under
+  Segment 12: dlt can echo credentials in logs/tracebacks; Airflow
+  renders task templates in logs (use `Connection`/`Variable` objects so
+  the UI mask filter catches them); CDC needs a dedicated source DB user
+  with `REPLICATION` (least privilege), not a superuser.
+- **PII / governance (out of v1 scope):** field-level masking / hashing /
+  column exclusion and GDPR delete propagation — `schema_contract: freeze`
+  is not enough for regulated destinations. Revisit post-v1.
+
+> The following items moved out of Tricky Parts (gap) and into scoped
+> segments: backfill / initial load → **Segment 12**; pipeline lifecycle
+> / orphan cleanup → **Segment 12**; incremental edge cases → **Segment
+> 12**; data-quality checks → **Segment 12**. Search the segment text
+> for the implementation contract.
 
 ## Open Considerations (not scoped — decide during build)
 
-These are deferred notes, not v1 segments. Revisit before/while building.
-(Prod deployment, executor, and secrets backend are now scoped under
-Segment 10.)
+Items previously listed here have been promoted into scoped segments:
 
-- **Multi-environment config:** same pipeline YAML needs to point at different
-  connections per env (dev/staging/prod). Logical connection names help, but
-  env-specific overrides + promotion flow are unspecified. Decide before
-  Segment 10 finalizes the secrets-resolver layer.
-- **Alert depth:** failure callbacks + freshness via `Dataset` events cover
-  the basics. Still missing: severity / routing, dedup (avoid alert storms on
-  repeated failures), schema-change alerts, SLA definitions, and
-  scheduler/triggerer heartbeat health ("who watches the watcher").
+- Multi-environment config + promotion → **Segment 13**.
+- Alert depth (severity / dedup / schema-change alerts → **Segment 9**;
+  scheduler/triggerer heartbeat + SLA routing → **Segment 14**).
+- Prod deployment, executor, secrets backend → **Segment 10**.
+
+Nothing currently sits here unscoped. New "decide during build" notes
+should be added here as they arise.
 
 ## Critical Files
 - `src/data_pipeline_template/config/models.py` — YAML schema contract;
