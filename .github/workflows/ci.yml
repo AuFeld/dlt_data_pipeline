@@ -94,11 +94,20 @@ jobs:
       - name: non-cdc postgres integration tests
         run: uv run pytest tests/integration -m "postgres and not cdc"
 
-      # CDC needs wal_level=logical, which GHA services: cannot configure.
-      # Bring up the compose postgres-source for the CDC subset only.
-      - name: docker compose postgres-source (CDC)
+  integration-cdc:
+    # Separate job from integration-postgres because GHA `services:` postgres
+    # cannot set wal_level=logical (no custom `command:` support), and the
+    # services already bind host port 5433 — bringing up docker compose
+    # postgres-source in the same job hits a port conflict. Compose-only here.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-uv-airflow
+        with:
+          airflow-version: "2.10.3"
+      - name: docker compose postgres-source + postgres-destination
         run: |
-          docker compose -f docker/docker-compose.yml up -d postgres-source
+          docker compose -f docker/docker-compose.yml up -d postgres-source postgres-destination
           for i in {1..30}; do
             if docker compose -f docker/docker-compose.yml exec -T postgres-source \
               pg_isready -U source >/dev/null 2>&1; then
