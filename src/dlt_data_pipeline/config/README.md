@@ -98,7 +98,73 @@ this order, taking the first hit:
 that don't need credentials, like local `duckdb` or local-`file://`
 filesystem reads).
 
-## Known limitations
+## Incremental knobs ([`models.py:123-124`](models.py))
+
+`SyncConfig.tolerance_seconds` (default `0`, max `86400`) maps to dlt's
+`Incremental.lag`. `SyncConfig.lookback` is an ISO-8601 duration string
+(`PT1H`, `P1D`) parsed by `isodate`. Both compose — lookback re-reads a
+trailing window, tolerance further widens the comparison threshold for
+late writes. Defaults are zero / null — explicit opt-in per pipeline.
+
+```yaml
+sync:
+  mode: incremental
+  cursor_field: updated_at
+  primary_key: id
+  tolerance_seconds: 30        # absorb 30s of cursor-vs-commit skew
+  lookback: PT1H               # always re-read the last hour
+```
+
+## Backfill ([`BackfillConfig`](models.py))
+
+```yaml
+sync:
+  mode: incremental
+  cursor_field: updated_at
+  primary_key: id
+  backfill:
+    chunk_size: P7D            # ISO-8601 duration parsed by isodate
+    partition_field: updated_at  # optional; defaults to cursor_field
+```
+
+Drives `python -m dlt_data_pipeline run-backfill <name> --start <ts>
+--end <ts>` — each chunk runs as its own `pipeline.run()` with bounded
+`initial_value` / `end_value`. Implementation contract in
+[`cli/backfill_cmds.py`](../cli/backfill_cmds.py); operator-facing usage
+in [`AGENTS.md`](../../../AGENTS.md).
+
+## Quality ([`QualityConfig`](models.py))
+
+```yaml
+quality:
+  row_count_check: true
+  check_mode: cross_cluster    # default; PythonOperator + two engines
+  # check_mode: same_cluster   # SQLCheckOperator on conn_id dlt_<dest.connection>
+```
+
+`cross_cluster` (default) opens source + destination engines via
+`dlt.secrets` keyed by the YAML's logical connection names — no Airflow
+Connection wiring required. `same_cluster` is cheaper but requires an
+Airflow Connection `dlt_<destination.connection>` reachable to both
+schemas. Generated tasks land via
+[`airflow/quality.py`](../airflow/quality.py).
+
+## Per-task SLA ([`models.py:131`](models.py))
+
+`SyncConfig.sla_minutes` plumbs `sla=timedelta(minutes=N)` onto every
+task generated inside the `PipelineTasksGroup`; breaches invoke
+`sla_miss_callback` → `post_sla_miss_alert` (Segment 14). Airflow 3.x
+migration path documented in
+[`airflow/README.md`](../airflow/README.md).
+
+## Known issues / troubleshooting
+
+> **Schema evolution:** expose dlt `schema_contract` per pipeline. `evolve`
+> default is convenient but silently adds columns; recommend `freeze` for
+> regulated destinations. Surface schema-change events in DAG-run metadata
+> via `XCom` or task logs.
+
+### Known limitations
 
 - Overlay scope is intentionally narrow. Re-mapping `sync.mode`,
   `options.write_disposition`, `source.config`, `alerts`, or `quality` is

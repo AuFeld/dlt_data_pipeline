@@ -53,7 +53,8 @@ pre-commit hook to enforce this lands in Segment 11.
 
 ## Destination credentials env-var shape
 
-The Secret uses the **working** form `DESTINATION__<CONN>__CREDENTIALS`
-that dlt actually reads, not the type-prefixed form advertised by
-`destinations/_metadata.py`. Segment 12 owns the metadata fix — do **not**
-add the `__<TYPE>__` segment here in the meantime.
+`DESTINATION__<CONN>__CREDENTIALS` — see
+[`destinations/_metadata.py`](../../../src/dlt_data_pipeline/destinations/_metadata.py)
+and the [`AGENTS.md`](../../../AGENTS.md) "Logical-connection-name →
+env-var convention" section. Segment 10.5 dropped the type segment from
+the resolver path, so no `__<TYPE>__` prefix.

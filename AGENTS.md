@@ -5,6 +5,16 @@ This is a shared **dlt + Airflow Fivetran replacement**. The full design is in
 for assistants working in the repo (Claude Code, Codex, Cursor, etc.).
 `CLAUDE.md` is a symlink to this file so Claude Code reads the same content.
 
+## For humans
+
+Human onboarding lives in [`README.md`](README.md) — project purpose,
+architecture diagram, quickstart, the 10-minute "add a pipeline" workflow,
+and a link table to each per-component README. This `AGENTS.md` file is
+the agent-facing brief; it deliberately skips onboarding prose and focuses
+on the introspection surface (MCP server, CLI flags, env-var convention,
+operational ops) that automated assistants need to act in the repo. The
+two files cross-link; they do not duplicate.
+
 ## MCP server
 
 A project-local MCP server is registered in [`.mcp.json`](.mcp.json) and
