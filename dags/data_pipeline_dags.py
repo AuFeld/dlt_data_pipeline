@@ -15,6 +15,11 @@ from pathlib import Path
 
 from dlt_data_pipeline.airflow.dag_factory import build_dag
 from dlt_data_pipeline.config.loader import ConfigError, load_pipelines
+from dlt_data_pipeline.observability.log_filter import install_secret_scrub
+
+# Install secret-scrubbing filter on root + dlt + airflow loggers before any
+# DAG-build code runs. Idempotent across DagBag re-parses.
+install_secret_scrub()
 
 log = logging.getLogger(__name__)
 

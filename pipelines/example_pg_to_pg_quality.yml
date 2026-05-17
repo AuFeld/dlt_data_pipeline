@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=./_schema.json
+name: example_pg_to_pg_quality
+source:
+  type: sql_database
+  connection: pg_source
+  config:
+    schema: public
+    tables:
+      - orders
+sync:
+  mode: incremental
+  cursor_field: updated_at
+  primary_key: id
+  tolerance_seconds: 30
+destination:
+  type: postgres
+  connection: pg_warehouse
+  dataset: raw_orders_quality
+schedule:
+  cron: "0 */2 * * *"
+  enabled: true
+options:
+  write_disposition: merge
+  schema_contract: evolve
+quality:
+  row_count_check: true
+  check_mode: cross_cluster

@@ -205,3 +205,19 @@ def test_pipeline_factory_works_without_airflow_pg_cdc(tmp_path: Path) -> None:
             "SOURCES__PG_CDC__PROBE_CDC__CREDENTIALS": "postgresql://u:p@h:5432/db",
         },
     )
+
+
+_PROBE_RUN_BACKFILL_IMPORT = """
+import sys
+
+sys.modules['airflow'] = None  # type: ignore[assignment]
+
+# Just import the symbol — proves run_backfill stays under the airflow ban.
+from dlt_data_pipeline.pipeline_factory import run_backfill  # noqa: F401
+print('ok')
+"""
+
+
+def test_run_backfill_import_no_airflow(tmp_path: Path) -> None:
+    """Segment 12: run_backfill stays orchestrator-agnostic (Design principle #2)."""
+    _run_probe(_PROBE_RUN_BACKFILL_IMPORT, tmp_path)
