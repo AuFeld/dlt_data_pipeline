@@ -15,16 +15,21 @@ Python edits in the common case.
 
 ```mermaid
 flowchart LR
-    YAML["pipelines/*.yml"] --> Loader["config/loader.py<br/>(+ _env overlays)"]
+    YAML["pipelines/*.yml"] --> Loader["config/loader.py"]
+    Env["pipelines/_env/&lt;env&gt;.yml"] --> Loader
     Loader --> PC["PipelineConfig<br/>(pydantic)"]
-    PC --> PF["pipeline_factory.py"]
-    PF --> Src["sources/<br/>(entry-point plugins)"]
-    PF --> Dst["destinations/<br/>(factory + registry)"]
+    PC --> CLI["python -m dlt_data_pipeline<br/>(run, validate, doctor, backfill)"]
     PC --> DF["airflow/dag_factory.py"]
-    DF --> DAG["Airflow DAG<br/>(PipelineTasksGroup)"]
-    PF -.runtime.-> DAG
-    DAG --> Run[("dlt pipeline.run()")]
-    Run --> Warehouse[("Destination<br/>warehouse")]
+    CLI --> PF["pipeline_factory.build()"]
+    DF --> PF
+    Secrets["env vars /<br/>.dlt/secrets.toml"] -.->|resolve at runtime| PF
+    PF --> Src["sources/<br/>(rest_api, sql_database,<br/>filesystem, pg_cdc)"]
+    PF --> Dst["destinations/<br/>(duckdb, postgres, snowflake)"]
+    PF --> DAG["Airflow DAG<br/>(PipelineTasksGroup + quality + callbacks)"]
+    CLI --> Run[("dlt pipeline.run()")]
+    DAG --> Run
+    Run --> Warehouse[("Destination<br/>+ _dlt_* state tables")]
+    DAG -.on_failure.-> Alerts["observability/alerts.py<br/>(Slack / SMTP)"]
 ```
 
 Design contract: `pipeline_factory` and everything under `sources/`,
