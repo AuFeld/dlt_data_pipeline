@@ -185,15 +185,6 @@ Honest side-by-side. Where Fivetran wins, we say so.
 | Governance / PII masking | Built-in masking / hashing | **Not in v1** | Tracked as a deliberate post-v1 item. |
 | Vendor lock-in | Proprietary connectors and pipelines | Open-source dlt + Airflow + YAML | Pipelines are portable artifacts. |
 
-**Where Fivetran is the right call:** small data team without ops capacity,
-need for a long tail of niche SaaS connectors, or no engineering appetite
-for self-hosting Airflow.
-
-**Where this platform is the right call:** existing Airflow + Kubernetes
-investment, mostly-warehouse + Postgres + S3 + REST shapes, sensitivity to
-per-MAR pricing, or a need for source-level customization that managed
-connectors don't allow.
-
 ## Feasibility with our current tech stack
 
 How the platform maps onto the systems we already run:
