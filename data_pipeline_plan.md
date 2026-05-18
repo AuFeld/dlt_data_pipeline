@@ -76,55 +76,6 @@ Design principles:
      `executor_config={"pod_override": V1Pod(...)}` so one huge sync can't
      starve smaller ones.
 
-## Repo Structure
-
-```
-data_pipeline_template/
-├── pyproject.toml                  # deps, ruff/mypy/pytest config (use uv)
-├── .env.example                    # documents required env vars (non-secret)
-├── docker/
-│   ├── Dockerfile                  # single image: code + dlt + airflow
-│   └── docker-compose.yml          # webserver, scheduler, triggerer,
-│                                   # airflow-init, postgres-airflow (metadata),
-│                                   # postgres-source, postgres-destination
-├── airflow_home/
-│   ├── airflow.cfg                 # instance config: executor, metadata DB
-│   └── pod_templates/              # base pod template(s) for KubernetesExecutor
-├── dags/
-│   └── data_pipeline_dags.py       # imports loader + dag_factory; assigns
-│                                   #   generated DAGs into module globals()
-│                                   #   so Airflow's DagBag scans them
-├── pipelines/                      # USER-FACING: one YAML per pipeline
-│   ├── _schema.md
-│   └── example_*.yml
-├── src/data_pipeline_template/
-│   ├── config/
-│   │   ├── models.py               # pydantic v2 schema, discriminated unions on `type`
-│   │   └── loader.py               # discover + parse + validate pipelines/*.yml
-│   ├── sources/                    # one subpackage per source type
-│   │   ├── registry.py             # discovers builders via entry-point group
-│   │   │                           #   `data_pipeline_template.sources` (no hardcoded list)
-│   │   ├── _protocol.py            # Builder Protocol: (config) -> dlt.Source
-│   │   ├── rest_api/__init__.py    # wraps dlt.sources.rest_api; exposes `builder`
-│   │   ├── sql_database/__init__.py# wraps dlt.sources.sql_database
-│   │   ├── filesystem/__init__.py  # wraps dlt.sources.filesystem (files / S3)
-│   │   └── pg_cdc/__init__.py      # wraps dlt pg_replication
-│   ├── destinations/factory.py     # destination "type" -> configured dlt destination
-│   ├── pipeline_factory.py         # core: PipelineConfig -> runnable dlt.pipeline
-│   ├── airflow/
-│   │   ├── dag_factory.py          # YAML config -> DAG with PipelineTasksGroup
-│   │   ├── callbacks.py            # on_failure / on_success / SLA callbacks
-│   │   └── sensors.py              # freshness / CDC custom sensors
-│   └── observability/alerts.py     # run-failure hook -> Slack/email
-├── tests/{unit,integration,fixtures}/
-├── .dlt/
-│   ├── config.toml                 # committed: non-secret dlt config
-│   └── secrets.toml                # GIT-IGNORED: local credentials
-└── scripts/
-    ├── new_pipeline.py             # scaffold a new pipelines/<name>.yml
-    └── seed_local.sh
-```
-
 ## Pipeline YAML Schema (user-facing)
 
 ```yaml
@@ -183,14 +134,14 @@ catches them.
   "https://raw.githubusercontent.com/apache/airflow/constraints-<v>/constraints-<python>.txt"`.
   Pin Python to a version Airflow supports (verify against Airflow release notes
   at build time). Package skeleton, `.dlt/config.toml`, `.env.example`.
-- `pyproject.toml` also declares the `data_pipeline_template.sources`
+- `pyproject.toml` also declares the `dlt_data_pipeline.sources`
   entry-point group with the four built-in source builders (per Design
   principle #3).
 - Ruff `flake8-tidy-imports` rule banning `airflow*` imports outside
-  `src/data_pipeline_template/airflow/` (per Design principle #2).
+  `src/dlt_data_pipeline/airflow/` (per Design principle #2).
 - **Done when:** `uv sync` succeeds (with constraints honored); `ruff check` +
   `pytest` run clean; `python -c "from importlib.metadata import entry_points;
-  print(entry_points(group='data_pipeline_template.sources'))"` lists the four
+  print(entry_points(group='dlt_data_pipeline.sources'))"` lists the four
   builders.
 
 ### Segment 2 — Config layer
@@ -207,7 +158,7 @@ catches them.
   `destinations/factory.py` (duckdb + postgres), `pipeline_factory.py`. CLI
   to run one pipeline by name. `pipeline_factory.py` does **not** import
   `airflow` (Design principle #2).
-- **Done when:** `python -m data_pipeline_template.pipeline_factory run
+- **Done when:** `python -m dlt_data_pipeline.pipeline_factory run
   example_rest_to_duckdb` syncs a public API into local duckdb; integration
   test asserts row counts + schema; a separate test imports
   `pipeline_factory` and runs a pipeline end-to-end **without** `airflow`
@@ -251,7 +202,7 @@ catches them.
 - **Done when:** `docker compose up` brings up the full stack; UI reachable;
   Postgres→Postgres runs in-container; state survives `docker compose restart`;
   same image runs a pipeline standalone via `docker run … python -m
-  data_pipeline_template.pipeline_factory run <name>` (no Airflow process)
+  dlt_data_pipeline.pipeline_factory run <name>` (no Airflow process)
   — proves the image works for per-task pod invocation under
   `KubernetesExecutor`.
 
@@ -265,15 +216,15 @@ catches them.
   Segment 6. Pure context, no automation. Read automatically by Claude Code
   on session start.
 - JSON Schema export from pydantic models: new CLI subcommand
-  `python -m data_pipeline_template config schema` dumps
+  `python -m dlt_data_pipeline config schema` dumps
   `PipelineConfig.model_json_schema()`; committed at `pipelines/_schema.json`.
   Each `pipelines/*.yml` gets a top-line
   `# yaml-language-server: $schema=./_schema.json` so LSP-aware editors
   (and Claude) get inline field validation + autocomplete. Pre-commit hook
   regenerates `_schema.json` and fails if it drifts from the models.
 - Introspection CLI subcommands under existing `python -m
-  data_pipeline_template` entry point:
-  - `sources list` — dump the `data_pipeline_template.sources` entry-point
+  dlt_data_pipeline` entry point:
+  - `sources list` — dump the `dlt_data_pipeline.sources` entry-point
     group (no more `python -c "from importlib.metadata import …"` one-liners).
   - `sources describe <type>` — print that source's pydantic config schema
     + the env-var key its credentials resolve from.
@@ -283,14 +234,14 @@ catches them.
     destination would resolve and report any missing. Sub-second feedback
     vs. a full pipeline run that fails on the first missing credential.
 - **Done when:** `CLAUDE.md` present at repo root; `pipelines/_schema.json`
-  committed and regenerable via `python -m data_pipeline_template config
+  committed and regenerable via `python -m dlt_data_pipeline config
   schema`; pre-commit fails on drift; every `pipelines/*.yml` carries the
   `$schema` directive; `sources list / describe`, `pipelines validate /
   doctor` subcommands work; unit tests cover each subcommand's exit code on
   the happy + error paths.
 
 ### Segment 6.6 — Agent integration surface (borrowed from dlt LLM-native workflow)
-- **MCP server** (`src/data_pipeline_template/mcp_server.py`, FastMCP) exposing
+- **MCP server** (`src/dlt_data_pipeline/mcp_server.py`, FastMCP) exposing
   the four Segment 6.5 introspection subcommands (`sources_list`,
   `sources_describe`, `pipelines_validate`, `pipelines_doctor`) as native MCP
   tools so Claude Code / Codex call them without subprocess overhead. Registered
@@ -311,7 +262,7 @@ catches them.
   from Segment 9 (emits a YAML skeleton from source + destination metadata
   with TODO markers; ~80 LOC). Segment 9 still owns the polished version
   (CI workflow, alerting, scaffolder UX).
-- **Done when:** `uv run python -m data_pipeline_template.mcp_server` lists
+- **Done when:** `uv run python -m dlt_data_pipeline.mcp_server` lists
   four tools; existing CLI tests stay green after the helper extraction;
   `run example_rest_to_duckdb --limit 1 --no-load` exits 0 without writing a
   duckdb dataset; `CLAUDE.md` resolves to `AGENTS.md` via symlink (mode
@@ -498,7 +449,7 @@ wiring landed in Segment 4 (`config/models.py:112`,
 ### Segment 10.5 — Destination env-var convention fix
 Bug: destinations metadata advertises
 `DESTINATION__<TYPE>__<CONNECTION>__CREDENTIALS`
-(see `src/data_pipeline_template/destinations/_metadata.py:37,45` and
+(see `src/dlt_data_pipeline/destinations/_metadata.py:37,45` and
 `AGENTS.md:44-45`), but `destinations/factory.py` constructs each
 destination with `destination_name=connection`, so dlt's actual lookup
 path is `DESTINATION__<CONNECTION>__CREDENTIALS__*` — no type segment.
@@ -605,7 +556,7 @@ Promoted from former "Tricky Parts (gap)" items — these have grown beyond
   `initial_value` partitioned ranges. Surface as YAML
   `sync.backfill.chunk_size` + `sync.backfill.partition_field`. Add a new
   `pipeline_factory.run_backfill(name, start, end)` callable plus a
-  matching `python -m data_pipeline_template run-backfill <name> --start
+  matching `python -m dlt_data_pipeline run-backfill <name> --start
   <ts> --end <ts>` CLI subcommand the user calls once before enabling the
   schedule.
 - **Pipeline lifecycle / orphan cleanup:** a `pipelines delete <name>` CLI
@@ -809,25 +760,6 @@ direction too. `README.md` is currently a 21-byte stub.
 - **PII / governance (out of v1 scope):** field-level masking / hashing /
   column exclusion and GDPR delete propagation — `schema_contract: freeze`
   is not enough for regulated destinations. Revisit post-v1.
-
-> The following items moved out of Tricky Parts (gap) and into scoped
-> segments: backfill / initial load → **Segment 12**; pipeline lifecycle
-> / orphan cleanup → **Segment 12**; data-quality checks → **Segment 12**.
-> Search the segment text for the implementation contract. (Incremental
-> edge cases were re-added above as a conceptual hazard; Segment 12 still
-> owns the implementation.)
-
-## Open Considerations (not scoped — decide during build)
-
-Items previously listed here have been promoted into scoped segments:
-
-- Multi-environment config + promotion → **Segment 13**.
-- Alert depth (severity / dedup / schema-change alerts → **Segment 9**;
-  scheduler/triggerer heartbeat + SLA routing → **Segment 14**).
-- Prod deployment, executor, secrets backend → **Segment 10**.
-
-Nothing currently sits here unscoped. New "decide during build" notes
-should be added here as they arise.
 
 ## Critical Files
 - `src/dlt_data_pipeline/config/models.py` — YAML schema contract;
