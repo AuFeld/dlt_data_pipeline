@@ -15,16 +15,21 @@ Python edits in the common case.
 
 ```mermaid
 flowchart LR
-    YAML["pipelines/*.yml"] --> Loader["config/loader.py<br/>(+ _env overlays)"]
+    YAML["pipelines/*.yml"] --> Loader["config/loader.py"]
+    Env["pipelines/_env/&lt;env&gt;.yml"] --> Loader
     Loader --> PC["PipelineConfig<br/>(pydantic)"]
-    PC --> PF["pipeline_factory.py"]
-    PF --> Src["sources/<br/>(entry-point plugins)"]
-    PF --> Dst["destinations/<br/>(factory + registry)"]
+    PC --> CLI["python -m dlt_data_pipeline<br/>(run, validate, doctor, backfill)"]
     PC --> DF["airflow/dag_factory.py"]
-    DF --> DAG["Airflow DAG<br/>(PipelineTasksGroup)"]
-    PF -.runtime.-> DAG
-    DAG --> Run[("dlt pipeline.run()")]
-    Run --> Warehouse[("Destination<br/>warehouse")]
+    CLI --> PF["pipeline_factory.build()"]
+    DF --> PF
+    Secrets["env vars /<br/>.dlt/secrets.toml"] -.->|resolve at runtime| PF
+    PF --> Src["sources/<br/>(rest_api, sql_database,<br/>filesystem, pg_cdc)"]
+    PF --> Dst["destinations/<br/>(duckdb, postgres, snowflake)"]
+    PF --> DAG["Airflow DAG<br/>(PipelineTasksGroup + quality + callbacks)"]
+    CLI --> Run[("dlt pipeline.run()")]
+    DAG --> Run
+    Run --> Warehouse[("Destination<br/>+ _dlt_* state tables")]
+    DAG -.on_failure.-> Alerts["observability/alerts.py<br/>(Slack / SMTP)"]
 ```
 
 Design contract: `pipeline_factory` and everything under `sources/`,
@@ -98,6 +103,62 @@ full dry-run flow.
 
 Full CLI surface in [`src/dlt_data_pipeline/cli/README.md`](src/dlt_data_pipeline/cli/README.md).
 
+## Repository structure
+
+Top-level layout — each entry links into its per-component README via the
+Component Map below.
+
+```
+dlt_data_pipeline/
+├── pyproject.toml                  # deps, ruff/mypy/pytest, entry-points
+├── .env.example                    # documents required env vars (non-secret)
+├── AGENTS.md                       # agent brief (CLAUDE.md is a symlink)
+├── README.md                       # this file
+├── data_pipeline_plan.md           # design log + segment history
+├── docker/
+│   ├── Dockerfile                  # single shared image: webserver/scheduler/triggerer/worker
+│   ├── docker-compose.yml          # local stack
+│   └── postgres-source-init/       # CDC bootstrap: wal_level=logical + replicator role
+├── airflow_home/
+│   ├── airflow.cfg                 # baseline; env-override via AIRFLOW__<SECTION>__<KEY>
+│   └── pod_templates/base.yaml     # authoritative KubernetesExecutor pod template
+├── dags/
+│   ├── data_pipeline_dags.py       # DagBag entry; assigns generated DAGs to globals()
+│   └── heartbeat_check.py          # scheduler/triggerer liveness DAG
+├── pipelines/                      # USER-FACING: one YAML per pipeline
+│   ├── _schema.json                # generated from pydantic models
+│   ├── _schema.md                  # human reference
+│   ├── _env/                       # per-env overlay files keyed by pipeline name
+│   └── example_*.yml
+├── src/dlt_data_pipeline/
+│   ├── __main__.py                 # CLI entry: python -m dlt_data_pipeline …
+│   ├── pipeline_factory.py         # PipelineConfig -> runnable dlt.pipeline (airflow-free)
+│   ├── mcp_server.py               # FastMCP server exposing introspection tools
+│   ├── config/                     # pydantic models, YAML loader, env overlays
+│   ├── sources/                    # plugin registry + rest_api / sql_database / filesystem / pg_cdc
+│   ├── destinations/               # factory + metadata + registry (duckdb, postgres, snowflake)
+│   ├── airflow/                    # dag_factory, callbacks, sensors, quality tasks
+│   ├── observability/              # alerts (Slack/SMTP), secret-scrubbing log filter
+│   └── cli/                        # per-subcommand modules wrapped by __main__
+├── deploy/k8s/
+│   ├── base/                       # KubernetesExecutor manifests + pod template + RBAC
+│   └── overlays/{dev,staging,prod}/
+├── tests/
+│   ├── unit/
+│   ├── integration/
+│   └── fixtures/                   # rest_cassettes, files/, pipeline YAML fixtures
+├── scripts/
+│   ├── new_pipeline.py             # YAML scaffolder
+│   ├── seed_local.sh
+│   └── seed_source.sql
+├── .claude/skills/add-pipeline/    # slash skill: scaffold -> validate -> doctor
+├── .mcp.json                       # registers the local MCP server
+├── .dlt/
+│   ├── config.toml                 # committed non-secret dlt config
+│   └── secrets.toml                # GIT-IGNORED local credentials
+└── .github/workflows/ci.yml        # lint + unit + integration matrix + build-and-push
+```
+
 ## Component map
 
 | Path | Purpose |
@@ -127,4 +188,4 @@ Revisit post-v1 — see the "PII / governance" entry under
   log, Tricky Parts catalogue.
 - [`AGENTS.md`](AGENTS.md) — agent brief (also read by Claude Code as
   `CLAUDE.md`).
-- Each per-component README under [Component map](#component-map) above.
+- Each per-component README under the Component Map above.
